@@ -1,137 +1,130 @@
-# 🏥 Blockchain-Based Patient Data Management System
-A secure, decentralized platform for managing patient health records, consultations, prescriptions, billing, and lab results—combining on-chain auditability with off-chain efficiency.
+# 🏥 BioVault-Core: Decentralized Health Records System
 
-
-
----
-## 🚀 Overview
-This system empowers patients, doctors, admins, insurers, and emergency approvers to interact seamlessly:
-- Patients control who sees their records.  
-- Doctors upload encrypted PDF records and prescriptions.  
-- Admins audit data with doctor/patient approval.  
-- Insurers submit and evaluate claims.  
-- Emergency teams override access via multi-sig voting.  
-- Billing ledger and lab results modules ensure financial transparency and test integrity.
----
+A secure, decentralized medical portal combining on-chain Soulbound Token (SBT) identities and audit logs with performant off-chain databases, secure AWS S3 PDF storage, AWS Bedrock clinical AI summaries, and real-time IoT vital telemetry analysed by a FastAPI Random Forest classifier.
 
 ---
-## ✨ Key Features
 
-- **Role & Access Control**  
-- **Wallet-Based Authentication & DID/SBT Identity**  
-- **Encrypted PDF Storage on IPFS**  
-- **Appointments & Telemedicine**  
-- **On-Chain e-Prescriptions (NFTs)**  
-- **Automated Insurance Claims & USDC Payouts**  
-- **Emergency Override with Multi-Sig Voting**  
-- **Admin Access Requests with Dual Approval**  
-- **Immutable Audit Trail via Smart-Contract Events**  
-- **Billing Ledger Module**  
-- **Lab Results Integration Module**
----
+## 🚀 Architectural Overview
 
----
-## 📦 Modules Breakdown
+BioVault-Core divides tasks modularly across four core layers:
 
-| Module                                | Description                                                                                      |
-|---------------------------------------|--------------------------------------------------------------------------------------------------|
-| **1. User Roles & Access Control**    | Define Patient, Doctor, Admin, Insurer, Approver roles with Supabase RLS + on-chain consent.    |
-| **2. Authentication & Identity**      | Wallet login, nonce signing, JWTs enriched by Soulbound tokens (ERC-721).                        |
-| **3. Medical Record Storage**         | Client-side AES-256 encryption of PDFs → IPFS → CIDs + encrypted keys in Supabase.               |
-| **4. Appointment Scheduling**         | Supabase tables + real-time subscriptions + on-chain event logging for audit timestamps.         |
-| **5. Telemedicine & e-Prescription**  | `Telemedicine.sol` for consult events & prescription issuance, encrypted summaries on IPFS.      |
-| **6. Insurance Claims & Billing**     | `Insurance.sol` handles claim NFTs, approvals, USDC payouts; off-chain proofs in Supabase.       |
-| **7. Emergency Override**             | `EmergencyAccess.sol` multi-sig proposals, votes, and auto-grant of temporary access flags.      |
-| **8. Admin Access Requests**          | `AccessRequest.sol` dual-approval workflow for admin visibility of patient PDFs.                 |
-| **9. Audit Trail & Logging**          | Listener streams contract events into Supabase `access_logs` for tamper-evident reporting.       |
-| **10. Billing Ledger**                | `BillingContract.sol` logs cost entries on-chain; off-chain `ledger_entries` + invoice PDFs.     |
-| **11. Lab Results Integration**       | `LabResultContract.sol` logs result metadata on-chain; off-chain `lab_results` + IPFS JSON/CSV.  |
+```
+                  ┌──────────────────────────────┐
+                  │      Next.js Frontend        │
+                  │   (Ethers.js v6 Wallet Log)   │
+                  └──────────────┬───────────────┘
+                                 │
+                                 ▼ (REST API)
+                  ┌──────────────────────────────┐
+                  │      Go API Gateway          │
+                  │  (CORS, Postgres & S3 Sync)  │
+                  └──────┬──────────────┬────────┘
+                         │              │
+                         │ (JSON-RPC)   │ (HTTP Proxy)
+                         ▼              ▼
+           ┌─────────────────────┐   ┌───────────────────────────┐
+           │ Go-Ethereum Client  │   │     FastAPI ML Server     │
+           │  (EVM Cancun Node)  │   │  (IoT Anomaly Predictor)  │
+           └─────────────────────┘   └───────────────────────────┘
+```
 
-
----
-- **On-Chain**: Doctor registry, consent, consults, prescriptions, claims, billing, lab results, emergency votes.  
-- **Off-Chain**: Supabase Postgres with RLS, metadata tables, encrypted blobs on IPFS, real-time subscriptions.
----
-
-## 🛠 Tech Stack
-
-- **Blockchain**: Solidity, Hardhat, OpenZeppelin  
-- **Front End**: React (Next.js), Tailwind CSS, Ethers.js, Web3Modal  
-- **Off-Chain DB**: Supabase (Postgres, RLS, Edge Functions)  
-- **Storage**: IPFS (via Pinata or Infura)  
-- **Identity**: MetaMask, WalletConnect, ERC-721 Soulbound Tokens  
-- **Orchestration**: Node.js scripts or Supabase Functions for event listeners  
-- **Visualization**: Mermaid for diagrams, The Graph (optional) for indexing
+1. **Smart Contracts (EVM Cancun / Hardhat)**: 
+   * Identity verification using Soulbound Tokens (SBT).
+   * Dual-approval consent tracking and medical record indexing.
+2. **Go API Gateway (`backend`)**: 
+   * A performant, struct-based backend implementing Gin routes.
+   * Handles session nonces, MetaMask signature recovery, database logging, and blockchain transaction signing.
+3. **Cloud Stack (AWS)**: 
+   * **RDS PostgreSQL**: Relational tables for profiles, registration queues, and vital logs.
+   * **S3 Bucket**: Secure storage for medical files.
+   * **Bedrock AI**: Generates diagnostic summaries using Claude 3.5 Sonnet.
+4. **Machine Learning Classifier (FastAPI)**:
+   * Classifies streamed patient IoT data in real-time.
 
 ---
 
 ## 📁 Repository Structure
 
 ```
-patient-data-system/
-├── contracts/           # Solidity contracts
-│   ├── DoctorRegistry.sol
-│   ├── Telemedicine.sol
-│   ├── Insurance.sol
-│   ├── EmergencyAccess.sol
-│   ├── AccessRequest.sol
-│   ├── BillingContract.sol
-│   └── LabResultContract.sol
-├── infra/               # Supabase SQL migrations & RLS policies
-│   ├── schema.sql
-│   └── policies.sql
-├── scripts/             # Deployment & event-listener scripts
-├── frontend/                 # React + Tailwind front-end
-├── docs/                # Detailed design & architecture docs
-└── README.md            # Project overview & setup
+BioVault-Core/
+├── backend/                  # Go REST API Gateway
+│   ├── api/                  # Modular Route Groupings (Auth, Admin, Patient)
+│   ├── pkg/
+│   │   ├── config/           # Config managers (.env loaders)
+│   │   ├── db/               # RDS PostgreSQL connection & auto-schema migrations
+│   │   └── ethclient/        # Ethereum connection & signature verification
+│   └── main.go               # Server startup entrypoint
+│
+├── blockchain/               # Smart Contract Workspace
+│   ├── contracts/            # Solidity files (Registries, Records, Finance, Override)
+│   ├── scripts/              # Deployments & patient registration helpers
+│   └── hardhat.config.js     # Hardhat settings (runs 100 accounts on node start)
+│
+└── frontend/                 # Next.js 14 Cyberpunk Portal
+    ├── src/
+    │   ├── app/              # Next.js router pages (MetaMask login, profile)
+    │   └── components/       # Visual components (CyberNavbar)
+    └── .env.local            # Frontend variables
 ```
 
-## 📄 License
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+---
 
+## 🛠 Setup & Startup Guide
 
-1. Backend Setup (Hardhat)
+Follow these steps to run the complete stack locally:
 
-Initialize your Hardhat workspace and install dependencies:
-# Ensure you’re on Node.js v18.x
-nvm install 18.20.0
-nvm use 18.20.0
-# Initialize npm and install Hardhat toolbox + ethers v6
-npm init -y
-npm install --save-dev \
-  @nomicfoundation/hardhat-toolbox \
-  ethers@^6.14.0 \
-  typescript ts-node \
-  @typechain/hardhat @typechain/ethers-v6 \
-  @types/chai @types/mocha \
-  solidity-coverage hardhat-gas-reporter
-# Scaffold basic Hardhat project
-npx hardhat
-# Openzepplian download
-npm install @openzeppelin/contracts
+### 1. Compile and Start Local Blockchain
+1. Enter the blockchain folder and install dependencies:
+   ```bash
+   cd blockchain
+   npm install
+   ```
+2. Start the local node (generates 100 pre-funded test accounts):
+   ```bash
+   npx hardhat node
+   ```
+3. Open a second terminal and deploy the smart contracts:
+   ```bash
+   npx hardhat run scripts/deploy.js --network localhost
+   ```
+   *Note: This will print the deployed contract addresses. Keep these for your env files!*
 
+### 2. Configure environment variables
+* **Backend**: Create `backend/.env` (using `backend/.env.example` as a template) and add your database credentials, AWS keypair, and the deployed contract addresses.
+* **Frontend**: Create `frontend/.env.local` (using `frontend/.env.local.example`) and configure the Go API URL.
 
-2. Frontend Setup (React + Tailwind CSS)
+### 3. Bootstrap Go Backend
+1. Enter the backend folder and fetch dependencies:
+   ```bash
+   cd backend
+   go mod tidy
+   ```
+2. Run the Go server:
+   ```bash
+   go run main.go
+   ```
+   *Note: Automatically verifies tables inside PostgreSQL on startup.*
 
-Create and configure your React application:
-cd frontend
-# Scaffold React app
-npx create-react-app .
-# Install ethers.js for Web3 interactions
-npm install ethers
+### 4. Bootstrap Frontend
+1. Enter the frontend folder and install packages:
+   ```bash
+   cd frontend
+   npm install
+   ```
+2. Run Next.js:
+   ```bash
+   npm run dev
+   ```
+3. Load `http://localhost:3000/` in your browser.
 
+---
 
-3. Deployment
-
-# Compile contracts
-npx hardhat compile
-# Run tests
-npx hardhat test
-# Deploy to a local network
-npx hardhat node        # Start local node
-npx hardhat run scripts/deploy.js --network localhost
-# Start development server
-npm start
-# Build for production
-npm run build
-
+## 🧪 Testing the Login Handshake
+1. Register a test patient address in the contract:
+   ```bash
+   cd blockchain
+   npx hardhat run scripts/register-patient.js --network localhost
+   ```
+2. Import Hardhat **Account #1's private key** (`0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d`) into MetaMask.
+3. Switch MetaMask to `Localhost 8545` (Chain ID `31337`).
+4. Click **Initialize Session** on the homepage and sign!

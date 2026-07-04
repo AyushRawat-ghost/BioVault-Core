@@ -2,8 +2,11 @@
 pragma solidity ^0.8.20;
 
 // Import the same interface we used in AccessRequest
-interface IRegistryCheck {
+interface IDoctorCheck {
     function isDoctor(address _addr) external view returns (bool);
+}
+
+interface IPatientCheck {
     function isPatient(address _addr) external view returns (bool);
 }
 
@@ -13,7 +16,8 @@ interface IAccessRequest {
 }
 
 contract MedicalRecord {
-    IRegistryCheck public registries; // We'll point this to the Doctor/Patient registries
+    IDoctorCheck public doctorRegistry;
+    IPatientCheck public patientRegistry;
     IAccessRequest public accessContract;
 
     uint256 public recordCount;
@@ -37,8 +41,9 @@ contract MedicalRecord {
         uint256 timestamp
     );
 
-    constructor(address _registries, address _accessContract) {
-        registries = IRegistryCheck(_registries);
+    constructor(address _doctorRegistry, address _patientRegistry, address _accessContract) {
+        doctorRegistry = IDoctorCheck(_doctorRegistry);
+        patientRegistry = IPatientCheck(_patientRegistry);
         accessContract = IAccessRequest(_accessContract);
     }
 
@@ -47,8 +52,8 @@ contract MedicalRecord {
         address _patient,
         string calldata _cid
     ) external {
-        require(registries.isDoctor(msg.sender), "Only registered doctors can add records");
-        require(registries.isPatient(_patient), "Invalid patient address");
+        require(doctorRegistry.isDoctor(msg.sender), "Only registered doctors can add records");
+        require(patientRegistry.isPatient(_patient), "Invalid patient address");
 
         recordCount += 1;
         records[recordCount] = Record({

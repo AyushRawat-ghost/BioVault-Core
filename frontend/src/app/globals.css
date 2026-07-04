@@ -1,6 +1,15 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-cyber-blue: #00f3ff;
+  --color-cyber-pink: #ff00ff;
+  --color-cyber-black: #050505;
+  --color-cyber-gray: #0d0d0d;
+  --color-cyber-yellow: #bcff00;
+
+  --font-orbitron: var(--font-orbitron);
+  --font-rajdhani: var(--font-rajdhani);
+}
 
 :root {
   --background: #050505;

@@ -24,28 +24,34 @@ async function main() {
   console.log("✅ InsurerRegistry:", insAddr);
 
   // --- STAGE 2: CLINICAL SERVICES ---
-  // Many of these require the DoctorRegistry to verify permissions
+  // Many of these require the registries to verify permissions
   const Telemedicine = await hre.ethers.getContractFactory("Telemedicine");
-  const telemedicine = await Telemedicine.deploy(drAddr); // Passing Doctor Registry
+  const telemedicine = await Telemedicine.deploy(drAddr, ptAddr); // Passing Doctor and Patient Registries
   await telemedicine.waitForDeployment();
   const teleAddr = await telemedicine.getAddress();
   console.log("✅ Telemedicine:", teleAddr);
 
   const PrescriptionManager = await hre.ethers.getContractFactory("PrescriptionManager");
-  const prescription = await PrescriptionManager.deploy(drAddr);
-  await prescription.waitForDeployment();
+  const prescription = await PrescriptionManager.deploy(teleAddr); // Passing Telemedicine Address
+  await telemedicine.waitForDeployment();
   const rxAddr = await prescription.getAddress();
   console.log("✅ PrescriptionManager:", rxAddr);
 
-  const HospitalManagement = await hre.ethers.getContractFactory("HospitalManagement");
-  const hospital = await HospitalManagement.deploy(drAddr);
+  const HospitalServices = await hre.ethers.getContractFactory("HospitalServices");
+  const hospital = await HospitalServices.deploy(drAddr, ptAddr, insAddr); // Passing Doctor, Patient, and Insurer Registries
   await hospital.waitForDeployment();
   const hospAddr = await hospital.getAddress();
-  console.log("✅ HospitalManagement:", hospAddr);
+  console.log("✅ HospitalServices:", hospAddr);
 
   // --- STAGE 3: INFRASTRUCTURE & ACCESS ---
+  const AccessRequest = await hre.ethers.getContractFactory("AccessRequest");
+  const access = await AccessRequest.deploy(drAddr, ptAddr); // Passing Doctor and Patient Registries
+  await access.waitForDeployment();
+  const accAddr = await access.getAddress();
+  console.log("✅ AccessRequest:", accAddr);
+
   const MedicalRecord = await hre.ethers.getContractFactory("MedicalRecord");
-  const medicalRecord = await MedicalRecord.deploy();
+  const medicalRecord = await MedicalRecord.deploy(drAddr, ptAddr, accAddr); // Passing Doctor Registry, Patient Registry, and AccessRequest Address
   await medicalRecord.waitForDeployment();
   const medAddr = await medicalRecord.getAddress();
   console.log("✅ MedicalRecord:", medAddr);
@@ -56,12 +62,6 @@ async function main() {
   const emAddr = await emergency.getAddress();
   console.log("✅ EmergencyProtocol:", emAddr);
 
-  const AccessRequest = await hre.ethers.getContractFactory("AccessRequest");
-  const access = await AccessRequest.deploy();
-  await access.waitForDeployment();
-  const accAddr = await access.getAddress();
-  console.log("✅ AccessRequest:", accAddr);
-
   const Insurance = await hre.ethers.getContractFactory("Insurance");
   const insurance = await Insurance.deploy(ptAddr, insAddr); // Passing Patient and Insurer Registries
   await insurance.waitForDeployment();
@@ -69,7 +69,7 @@ async function main() {
   console.log("✅ Insurance:", insuranceAddr);
 
   const BillingContract = await hre.ethers.getContractFactory("BillingContract");
-  const billing = await BillingContract.deploy();
+  const billing = await BillingContract.deploy(drAddr, ptAddr); // Passing Doctor and Patient Registries
   await billing.waitForDeployment();
   const billAddr = await billing.getAddress();
   console.log("✅ BillingContract:", billAddr);

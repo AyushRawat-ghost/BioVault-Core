@@ -7,5 +7,12 @@ module.exports = {
     settings: {
       evmVersion: "cancun"
     }
+  },
+  networks: {
+    hardhat: {
+      accounts: {
+        count: 100 // Generates 100 accounts on startup!
+      }
+    }
   }
 };

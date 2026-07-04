@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-interface IRegistryCheck {
+interface IDoctorCheck {
     function isDoctor(address _addr) external view returns (bool);
+}
+
+interface IPatientCheck {
     function isPatient(address _addr) external view returns (bool);
 }
 
 contract BillingContract {
-    IRegistryCheck public registries;
+    IDoctorCheck public doctorRegistry;
+    IPatientCheck public patientRegistry;
 
     uint256 public invoiceCount;
 
@@ -26,13 +30,14 @@ contract BillingContract {
     event InvoiceGenerated(uint256 indexed id, address indexed provider, address indexed patient, uint256 amount, string cid);
     event InvoicePaid(uint256 indexed id, address indexed patient, uint256 amount);
 
-    constructor(address _registries) {
-        registries = IRegistryCheck(_registries);
+    constructor(address _doctorRegistry, address _patientRegistry) {
+        doctorRegistry = IDoctorCheck(_doctorRegistry);
+        patientRegistry = IPatientCheck(_patientRegistry);
     }
 
     function generateInvoice(address _patient, uint256 _amount, string calldata _cid) external {
-        require(registries.isDoctor(msg.sender), "Only registered provider can generate invoice");
-        require(registries.isPatient(_patient), "Invalid patient address");
+        require(doctorRegistry.isDoctor(msg.sender), "Only registered provider can generate invoice");
+        require(patientRegistry.isPatient(_patient), "Invalid patient address");
 
         invoiceCount++;
         invoices[invoiceCount] = Invoice({

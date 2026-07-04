@@ -14,8 +14,8 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: "AETHERIS | Decentralized Healthcare Neural Interface",
-  description: "Secure, on-chain patient data management for the year 2077.",
+  title: "ALTERIS OS | Decentralized Healthcare Interface",
+  description: "Secure, on-chain patient data management.",
 };
 
 export default function RootLayout({

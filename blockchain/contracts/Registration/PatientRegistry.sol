@@ -33,14 +33,14 @@ contract PatientRegistry is Ownable, ERC721 {
         _;
     }
 
-    function approve(address to,uint256 tokenId) public virtual override {
+    function approve(address /*to*/,uint256 tokenId) public virtual override {
         address owner = ERC721.ownerOf(tokenId);
         require(msg.sender == owner, "SBT: Only owner can approve."); 
         revert("SBT: Transfers and Approvals are restricted");
     }
 
     // 2. Prevents operator (batch) approvals
-    function setApprovalForAll(address operator, bool approved) public virtual override {
+    function setApprovalForAll(address /*operator*/, bool /*approved*/) public virtual override {
         revert("SBT: Transfers and Approvals are restricted");
     }
     
