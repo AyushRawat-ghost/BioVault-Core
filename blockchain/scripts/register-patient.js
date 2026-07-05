@@ -1,8 +1,27 @@
 const hre = require("hardhat");
+const fs = require("fs");
+const path = require("path");
+
+function getEnv(key) {
+  const dotenvPath = path.resolve(__dirname, "../../backend/.env");
+  if (fs.existsSync(dotenvPath)) {
+    const lines = fs.readFileSync(dotenvPath, "utf8").split("\n");
+    for (const line of lines) {
+      const parts = line.split("=");
+      if (parts[0] && parts[0].trim() === key) {
+        return parts[1].trim();
+      }
+    }
+  }
+  return process.env[key];
+}
 
 async function main() {
-  // Address of your deployed PatientRegistry contract
-  const patientRegistryAddress = "0x9A676e781A523b5d0C0e43731313A708CB607508";
+  // Read PatientRegistry address dynamically from backend/.env
+  const patientRegistryAddress = getEnv("PATIENT_REGISTRY_ADDR");
+  if (!patientRegistryAddress) {
+    throw new Error("PATIENT_REGISTRY_ADDR is not configured in backend/.env");
+  }
   
   // Account #1 from your Hardhat accounts to act as the Patient
   const patientAddress = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";

@@ -7,6 +7,8 @@ interface PatientInfo {
   address: string;
   name: string;
   avatar_url?: string;
+  status?: string;
+  blood_group?: string;
 }
 
 interface DoctorInfo {
@@ -14,6 +16,7 @@ interface DoctorInfo {
   name: string;
   specialization: string;
   avatar_url?: string;
+  status?: string;
 }
 
 interface HospitalKPIs {
@@ -39,8 +42,8 @@ export default function ProviderDashboard() {
     active_doctors: 0
   });
 
-  // Sidebar Tabs State: kpis | admit | admit-doc | modify | regulatory | upload | readme-logs
-  const [activeTab, setActiveTab] = useState<"kpis" | "admit" | "admit-doc" | "modify" | "regulatory" | "upload" | "readme-logs">("kpis");
+  // Sidebar Tabs State: kpis | admit | admit-doc | modify | regulatory | upload | readme-logs | request-assets | transfer-override
+  const [activeTab, setActiveTab] = useState<"kpis" | "admit" | "admit-doc" | "modify" | "regulatory" | "upload" | "readme-logs" | "request-assets" | "transfer-override">("kpis");
 
   // Modify Tab Sub-Tab: patient | doctor
   const [modifySubTab, setModifySubTab] = useState<"patient" | "doctor">("patient");
@@ -155,6 +158,14 @@ export default function ProviderDashboard() {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadTx, setUploadTx] = useState<string>("");
 
+  // Doctor Specific States
+  const [doctorPatients, setDoctorPatients] = useState<any[]>([]);
+  const [doctorAnomalies, setDoctorAnomalies] = useState<any[]>([]);
+  const [requestAssetTab, setRequestAssetTab] = useState<"meds" | "equipments">("meds");
+  const [overrideList, setOverrideList] = useState<any[]>([]);
+  const [isVoting, setIsVoting] = useState<number | null>(null);
+  const [transferOverrideSubTab, setTransferOverrideSubTab] = useState<"override" | "transfer" | "queue">("override");
+
   const [error, setError] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState<string>("");
 
@@ -183,7 +194,64 @@ export default function ProviderDashboard() {
     fetchNarcotics();
     fetchHospitalLogs();
     fetchMedicines();
+
+    if (cachedIsDoctor) {
+      fetchDoctorPatients(cachedAddress);
+      fetchDoctorAnomalies(cachedAddress);
+      fetchOverrides();
+      const interval = setInterval(() => {
+        fetchDoctorPatients(cachedAddress);
+        fetchDoctorAnomalies(cachedAddress);
+        fetchOverrides();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+
+    if (cachedIsAdmin) {
+      fetchOverrides();
+      const adminInterval = setInterval(() => {
+        fetchOverrides();
+      }, 10000);
+      return () => clearInterval(adminInterval);
+    }
   }, []);
+
+  const fetchDoctorPatients = async (address: string) => {
+    try {
+      const resp = await fetch(`${API_URL}/api/admin/doctor/patients?address=${address}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setDoctorPatients(data);
+      }
+    } catch (e) {
+      console.log("Failed to fetch doctor patients", e);
+    }
+  };
+
+  const fetchDoctorAnomalies = async (address: string) => {
+    try {
+      const resp = await fetch(`${API_URL}/api/admin/anomaly-logs?address=${address}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setDoctorAnomalies(data);
+      }
+    } catch (e) {
+      console.log("Failed to fetch doctor anomalies", e);
+    }
+  };
+
+  const fetchOverrides = async () => {
+    try {
+      const resp = await fetch(`${API_URL}/api/admin/doctor/override-list`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setOverrideList(data);
+      }
+    } catch (e) {
+      console.log("Failed to fetch overrides list", e);
+    }
+  };
+
 
   const fetchPatients = async () => {
     try {
@@ -929,7 +997,7 @@ export default function ProviderDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "kpis" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
           >
             <Activity size={15} />
-            <span>Hospital KPIs</span>
+            <span>{isAdmin ? "Hospital KPIs" : "Patient KPIs"}</span>
           </button>
           
           {/* Category: Patient Section */}
@@ -938,13 +1006,15 @@ export default function ProviderDashboard() {
             <span>Patient Section</span>
           </div>
 
-          <button
-            onClick={() => setActiveTab("admit")}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "admit" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
-          >
-            <UserPlus size={15} />
-            <span>Admit Patient</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab("admit")}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "admit" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+            >
+              <UserPlus size={15} />
+              <span>Admit Patient</span>
+            </button>
+          )}
 
           <button
             onClick={() => { setActiveTab("modify"); setModifySubTab("patient"); }}
@@ -962,50 +1032,123 @@ export default function ProviderDashboard() {
             <span>Upload Documents</span>
           </button>
 
-          {/* Category: Doctor Section */}
-          <div className="pt-4 pb-1 text-[10px] font-orbitron uppercase text-white/40 tracking-widest font-black flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyber-pink" />
-            <span>Doctor Section</span>
-          </div>
+          {/* Category: Doctor Section - Admin only */}
+          {isAdmin && (
+            <>
+              <div className="pt-4 pb-1 text-[10px] font-orbitron uppercase text-white/40 tracking-widest font-black flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyber-pink" />
+                <span>Doctor Section</span>
+              </div>
 
-          <button
-            onClick={() => setActiveTab("admit-doc")}
-            disabled={!isAdmin}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all text-left ${!isAdmin ? "opacity-30 cursor-not-allowed border-white/5 text-white/30" : "cursor-pointer"} ${activeTab === "admit-doc" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
-          >
-            <Stethoscope size={15} />
-            <span>Admit Doctor</span>
-          </button>
+              <button
+                onClick={() => setActiveTab("admit-doc")}
+                disabled={!isAdmin}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all text-left ${!isAdmin ? "opacity-30 cursor-not-allowed border-white/5 text-white/30" : "cursor-pointer"} ${activeTab === "admit-doc" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Stethoscope size={15} />
+                <span>Admit Doctor</span>
+              </button>
 
-          <button
-            onClick={() => { setActiveTab("modify"); setModifySubTab("doctor"); }}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "modify" && modifySubTab === "doctor" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
-          >
-            <Edit size={15} />
-            <span>Modify Doctor</span>
-          </button>
+              <button
+                onClick={() => { setActiveTab("modify"); setModifySubTab("doctor"); }}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "modify" && modifySubTab === "doctor" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Edit size={15} />
+                <span>Modify Doctor</span>
+              </button>
+            </>
+          )}
 
-          {/* Category: Logs Management */}
-          <div className="pt-4 pb-1 text-[10px] font-orbitron uppercase text-white/40 tracking-widest font-black flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-            <span>Logs Management</span>
-          </div>
+          {/* Category: Logs & Operations */}
+          {isAdmin ? (
+            <>
+              <div className="pt-4 pb-1 text-[10px] font-orbitron uppercase text-white/40 tracking-widest font-black flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                <span>Logs Management</span>
+              </div>
 
-          <button
-            onClick={() => setActiveTab("regulatory")}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "regulatory" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
-          >
-            <Shield size={15} />
-            <span>Regulatory Ledger</span>
-          </button>
+              <button
+                onClick={() => setActiveTab("regulatory")}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "regulatory" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Shield size={15} />
+                <span>Regulatory Ledger</span>
+              </button>
 
-          <button
-            onClick={() => setActiveTab("readme-logs")}
-            className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "readme-logs" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
-          >
-            <Terminal size={15} />
-            <span>Readme Logs</span>
-          </button>
+              <button
+                onClick={() => setActiveTab("readme-logs")}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "readme-logs" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Terminal size={15} />
+                <span>Readme Logs</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab("transfer-override"); setTransferOverrideSubTab("queue"); }}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "transfer-override" ? "border-cyber-pink text-cyber-pink bg-white/[0.02] drop-shadow-[0_0_8px_rgba(255,0,128,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <ShieldAlert size={15} />
+                <span>Override Approvals</span>
+                {overrideList.filter(o => o.status === "active").length > 0 && (
+                  <span className="ml-auto bg-cyber-pink text-black text-[9px] font-orbitron font-bold px-1.5 py-0.5 rounded">
+                    {overrideList.filter(o => o.status === "active").length}
+                  </span>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="pt-4 pb-1 text-[10px] font-orbitron uppercase text-white/40 tracking-widest font-black flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                <span>Doctor Operations</span>
+              </div>
+
+              <button
+                onClick={() => setActiveTab("request-assets")}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "request-assets" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <PlusCircle size={15} />
+                <span>Request Meds & Equipments</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("emergency-override")}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "emergency-override" ? "border-red-500 text-red-400 bg-white/[0.02] drop-shadow-[0_0_8px_rgba(239,68,68,0.15)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <ShieldAlert size={15} />
+                <span>Emergency Override</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("care-transfer")}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "care-transfer" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Users size={15} />
+                <span>Care Transfer</span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab("transfer-override"); setTransferOverrideSubTab("queue"); }}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "transfer-override" ? "border-cyber-pink text-cyber-pink bg-white/[0.02] drop-shadow-[0_0_8px_rgba(255,0,128,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Shield size={15} />
+                <span>Approval Queue</span>
+                {overrideList.filter(o => o.status === "active").length > 0 && (
+                  <span className="ml-auto bg-cyber-pink text-black text-[9px] font-orbitron font-bold px-1.5 py-0.5 rounded">
+                    {overrideList.filter(o => o.status === "active").length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab("readme-logs")}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border rounded transition-all cursor-pointer text-left ${activeTab === "readme-logs" ? "border-cyber-blue text-cyber-blue bg-white/[0.02] drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                <Terminal size={15} />
+                <span>ML Patient Alerts</span>
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Sidebar Footer Console */}
@@ -1065,8 +1208,100 @@ export default function ProviderDashboard() {
           </div>
         )}
 
-        {/* Tab 1: Hospital KPIs */}
+        {/* Tab 1: Hospital KPIs or Patient KPIs (for Doctors) */}
         {activeTab === "kpis" && (() => {
+          if (!isAdmin) {
+            // Render Doctor Patient KPIs View
+            const anomalousCount = doctorPatients.filter(p => p.anomaly_detected).length;
+            return (
+              <section className="p-6 border border-white/15 bg-white/[0.01] relative rounded space-y-6">
+                <div className="absolute top-0 left-0 w-8 h-[2px] bg-cyber-blue" />
+                <div className="absolute top-0 left-0 w-[2px] h-8 bg-cyber-blue" />
+                
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <Activity className="text-cyber-blue" size={16} />
+                    <h3 className="font-orbitron text-xs tracking-widest uppercase text-white font-bold">Doctor Patient Performance Indicators (KPIs)</h3>
+                  </div>
+                  <button
+                    onClick={() => fetchDoctorPatients(walletAddress)}
+                    className="text-[10px] font-orbitron uppercase text-cyber-blue flex items-center gap-1.5 border border-cyber-blue/30 bg-cyber-blue/5 px-3 py-1.5 hover:bg-cyber-blue hover:text-black font-bold transition-all cursor-pointer"
+                  >
+                    <RefreshCw size={10} /> Sync Telemetry
+                  </button>
+                </div>
+
+                {/* Patient KPI stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-xl">
+                  <div className="p-5 border border-white/10 bg-white/[0.01] rounded flex flex-col justify-between h-[110px]">
+                    <div className="flex justify-between items-start text-white/60">
+                      <span className="text-[10px] font-orbitron uppercase tracking-wider font-bold">Patients Under Care</span>
+                      <Users size={16} className="text-cyber-blue" />
+                    </div>
+                    <div className="text-3xl font-black font-orbitron text-white">{doctorPatients.length}</div>
+                  </div>
+
+                  <div className={`p-5 border rounded flex flex-col justify-between h-[110px] ${anomalousCount > 0 ? "border-red-500/50 bg-red-950/20 animate-pulse text-red-200" : "border-white/10 bg-white/[0.01] text-white/60"}`}>
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-orbitron uppercase tracking-wider font-bold">Anomalous Vitals Warning</span>
+                      <ShieldAlert size={16} className={anomalousCount > 0 ? "text-red-500 animate-bounce" : "text-white/40"} />
+                    </div>
+                    <div className={`text-3xl font-black font-orbitron ${anomalousCount > 0 ? "text-red-500" : "text-white"}`}>{anomalousCount}</div>
+                  </div>
+                </div>
+
+                {/* Patient vitals list table */}
+                <div className="mt-8 border border-white/10 bg-black/40 rounded p-6">
+                  <h4 className="font-orbitron text-xs tracking-wider uppercase text-white font-bold mb-4 flex items-center gap-2">
+                    <List size={14} className="text-cyber-blue" />
+                    <span>Patients Vitals Live Stream Ledger</span>
+                  </h4>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead>
+                        <tr className="border-b border-white/10 text-white/60 pb-2 uppercase tracking-wider text-[9px]">
+                          <th className="py-2 px-2">Patient Name</th>
+                          <th className="py-2 px-2">Wallet Address</th>
+                          <th className="py-2 px-2">Pulse (BPM)</th>
+                          <th className="py-2 px-2">Oxygen (SPO2)</th>
+                          <th className="py-2 px-2">Pressure (SYS/DIA)</th>
+                          <th className="py-2 px-2">Temp (°C)</th>
+                          <th className="py-2 px-2">ML Status</th>
+                          <th className="py-2 px-2 text-right">Last Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-white">
+                        {doctorPatients.map((p) => (
+                          <tr key={p.address} className={`hover:bg-white/[0.02] ${p.anomaly_detected ? "bg-red-950/20 text-red-100 animate-pulse font-semibold" : ""}`}>
+                            <td className="py-3 px-2 font-bold">{p.name}</td>
+                            <td className="py-3 px-2 text-white/50">{p.address}</td>
+                            <td className={`py-3 px-2 ${p.heart_rate > 100 || p.heart_rate < 60 ? "text-red-400 font-bold" : "text-green-400"}`}>{p.heart_rate} BPM</td>
+                            <td className={`py-3 px-2 ${p.spo2 < 95 ? "text-red-400 font-bold" : "text-green-400"}`}>{p.spo2}%</td>
+                            <td className="py-3 px-2">{p.systolic}/{p.diastolic}</td>
+                            <td className="py-3 px-2">{p.temperature}°C</td>
+                            <td className="py-3 px-2">
+                              <span className={`px-2 py-0.5 border text-[9px] rounded font-orbitron font-bold ${p.anomaly_detected ? "bg-red-500 text-black border-red-500" : "bg-green-950/20 border-green-500/40 text-green-400"}`}>
+                                {p.anomaly_detected ? "ANOMALY DETECTED" : "NOMINAL"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 text-right text-white/50">{p.last_updated}</td>
+                          </tr>
+                        ))}
+                        {doctorPatients.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-white/40">No patients associated with your credentials.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            );
+          }
+
+          // Admin Hospital KPIs rendering
           const totalCensus = kpis.beds_occupied + kpis.discharged + kpis.deceased;
           const occupiedPct = totalCensus > 0 ? Math.round((kpis.beds_occupied / totalCensus) * 100) : 0;
           const dischargedPct = totalCensus > 0 ? Math.round((kpis.discharged / totalCensus) * 100) : 0;
@@ -1148,72 +1383,19 @@ export default function ProviderDashboard() {
                     <span className="font-orbitron text-xs tracking-wider uppercase text-white/70 font-bold">Patient Census distribution</span>
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-center justify-around gap-6">
-                    {/* SVG Donut */}
-                    <div className="relative w-40 h-40">
-                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                        {/* Background circle */}
-                        <circle
-                          cx="60"
-                          cy="60"
-                          r="50"
-                          fill="transparent"
-                          stroke="#ffffff08"
-                          strokeWidth="10"
-                        />
-                        {/* Segment 1: Active Bed Occupied (Blue) */}
-                        {totalCensus > 0 && (
-                          <circle
-                            cx="60"
-                            cy="60"
-                            r="50"
-                            fill="transparent"
-                            stroke="#00f3ff"
-                            strokeWidth="10"
-                            strokeDasharray={`${(occupiedPct * 314.16) / 100} 314.16`}
-                            strokeDashoffset="0"
-                            className="transition-all duration-500 hover:stroke-[12px]"
-                          />
-                        )}
-                        {/* Segment 2: Discharged (Green) */}
-                        {totalCensus > 0 && (
-                          <circle
-                            cx="60"
-                            cy="60"
-                            r="50"
-                            fill="transparent"
-                            stroke="#4ade80"
-                            strokeWidth="10"
-                            strokeDasharray={`${(dischargedPct * 314.16) / 100} 314.16`}
-                            strokeDashoffset={`-${(occupiedPct * 314.16) / 100}`}
-                            className="transition-all duration-500 hover:stroke-[12px]"
-                          />
-                        )}
-                        {/* Segment 3: Deceased (Red) */}
-                        {totalCensus > 0 && (
-                          <circle
-                            cx="60"
-                            cy="60"
-                            r="50"
-                            fill="transparent"
-                            stroke="#ef4444"
-                            strokeWidth="10"
-                            strokeDasharray={`${(deceasedPct * 314.16) / 100} 314.16`}
-                            strokeDashoffset={`-${((occupiedPct + dischargedPct) * 314.16) / 100}`}
-                            className="transition-all duration-500 hover:stroke-[12px]"
-                          />
-                        )}
+                  <div className="flex items-center justify-around py-4">
+                    <div className="relative w-32 h-32 flex items-center justify-center">
+                      <svg className="absolute w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                        <path className="text-white/5" stroke="currentColor" strokeWidth="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <path className="text-cyber-blue" strokeDasharray={`${occupiedPct}, 100`} stroke="currentColor" strokeWidth="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                       </svg>
-                      
-                      {/* Inner Label */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center font-orbitron">
-                        <span className="text-[10px] text-white/50 uppercase tracking-widest">Total</span>
-                        <span className="text-2xl font-black text-white">{totalCensus}</span>
+                      <div className="text-center">
+                        <div className="text-2xl font-black font-orbitron text-cyber-blue">{kpis.beds_occupied}</div>
+                        <div className="text-[9px] uppercase tracking-wider text-white/40 font-bold">Active</div>
                       </div>
                     </div>
 
-                    {/* Legend Grid */}
-                    <div className="space-y-3 font-orbitron text-xs">
+                    <div className="space-y-2 text-xs font-orbitron">
                       <div className="flex items-center gap-2">
                         <span className="w-3 h-3 bg-cyber-blue rounded-sm" />
                         <div>
@@ -1346,7 +1528,7 @@ export default function ProviderDashboard() {
                     </div>
                   )}
 
-                  {/* Alert 4: Simulated Emergency Protocol Override logs */}
+                  {/* Alert 4: Override logs */}
                   <div className="p-3 bg-blue-950/20 border border-blue-500/30 text-blue-200 text-xs flex gap-3 rounded">
                     <Activity size={16} className="shrink-0 text-cyber-blue" />
                     <div>
@@ -1791,62 +1973,75 @@ export default function ProviderDashboard() {
                     </div>
                   </div>
                   
-                  {admittedPatients.length === 0 ? (
-                    <div className="text-center py-8 text-white/40 border border-dashed border-white/10 rounded">
-                      No patients admitted to this system yet.
-                    </div>
-                  ) : (
-                    <>
-                      {admittedPatients.filter(p => patientStatusFilter === "all" || (p.status || "active").toLowerCase() === patientStatusFilter.toLowerCase()).length === 0 ? (
+                  {(() => {
+                    const doctorFiltered = admittedPatients.filter(p => {
+                      if (!isAdmin && isDoctor) {
+                        return doctorPatients.some(dp => dp.address.toLowerCase() === p.address.toLowerCase());
+                      }
+                      return true;
+                    });
+                    const finalFiltered = doctorFiltered.filter(p => patientStatusFilter === "all" || (p.status || "active").toLowerCase() === patientStatusFilter.toLowerCase());
+
+                    if (doctorFiltered.length === 0) {
+                      return (
+                        <div className="text-center py-8 text-white/40 border border-dashed border-white/10 rounded">
+                          No patients associated under your credentials yet.
+                        </div>
+                      );
+                    }
+
+                    if (finalFiltered.length === 0) {
+                      return (
                         <div className="text-center py-12 text-white/40 border border-dashed border-white/10 rounded">
                           No patients matched the status filter: <span className="text-cyber-pink font-bold uppercase">{patientStatusFilter}</span>
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
-                          {admittedPatients
-                            .filter(p => patientStatusFilter === "all" || (p.status || "active").toLowerCase() === patientStatusFilter.toLowerCase())
-                            .map(p => (
-                              <div
-                                key={p.address}
-                                onClick={() => handleLoadPatientDetails(p.address)}
-                                className="border border-white/10 hover:border-cyber-blue/50 bg-black/40 hover:bg-white/[0.02] p-10 rounded transition-all cursor-pointer flex flex-col items-center text-center gap-6 relative group shadow-[0_0_20px_rgba(0,0,0,0.3)]"
-                              >
-                                <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-cyber-blue opacity-50 group-hover:opacity-100" />
-                                
-                                {p.avatar_url ? (
-                                  <img 
-                                    src={p.avatar_url} 
-                                    alt={p.name} 
-                                    className="w-36 h-36 rounded-full border-2 border-white/10 object-cover shadow-[0_0_20px_rgba(0,243,255,0.2)] group-hover:border-cyber-blue/50 transition-all"
-                                  />
-                                ) : (
-                                  <div className="w-36 h-36 rounded-full border border-dashed border-white/20 bg-white/5 flex items-center justify-center text-white/40 group-hover:border-cyber-blue/30 transition-all">
-                                    <Users size={54} />
-                                  </div>
-                                )}
-                                
-                                <div className="space-y-1.5">
-                                  <h5 className="font-orbitron font-bold text-lg sm:text-xl text-white group-hover:text-cyber-blue transition-colors truncate max-w-[280px]">
-                                    {p.name}
-                                  </h5>
-                                  <p className="text-xs sm:text-sm font-semibold text-cyber-pink uppercase tracking-wider">
-                                    Status: {p.status || "active"} | {p.blood_group || "O+"}
-                                  </p>
-                                  <p className="font-mono text-xs sm:text-sm text-white/40 select-all break-all">
-                                    {p.address.slice(0, 12)}...{p.address.slice(-10)}
-                                  </p>
-                                </div>
-                                
-                                <span className="text-xs sm:text-sm font-orbitron uppercase tracking-widest text-cyber-blue opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-                                  Click to Edit
-                                </span>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+                        {finalFiltered.map(p => (
+                          <div
+                            key={p.address}
+                            onClick={() => handleLoadPatientDetails(p.address)}
+                            className="border border-white/10 hover:border-cyber-blue/50 bg-black/40 hover:bg-white/[0.02] p-10 rounded transition-all cursor-pointer flex flex-col items-center text-center gap-6 relative group shadow-[0_0_20px_rgba(0,0,0,0.3)]"
+                          >
+                            <div className="absolute top-3 right-3 w-3 h-3 rounded-full bg-cyber-blue opacity-50 group-hover:opacity-100" />
+                            
+                            {p.avatar_url ? (
+                              <img 
+                                src={p.avatar_url} 
+                                alt={p.name} 
+                                className="w-36 h-36 rounded-full border-2 border-white/10 object-cover shadow-[0_0_20px_rgba(0,243,255,0.2)] group-hover:border-cyber-blue/50 transition-all"
+                              />
+                            ) : (
+                              <div className="w-36 h-36 rounded-full border border-dashed border-white/20 bg-white/5 flex items-center justify-center text-white/40 group-hover:border-cyber-blue/30 transition-all">
+                                <Users size={54} />
                               </div>
-                            ))}
-                        </div>
-                      )}
-                    </>
-                  )}
+                            )}
+                            
+                            <div className="space-y-1.5">
+                              <h5 className="font-orbitron font-bold text-lg sm:text-xl text-white group-hover:text-cyber-blue transition-colors truncate max-w-[280px]">
+                                {p.name}
+                              </h5>
+                              <p className="text-xs sm:text-sm font-semibold text-cyber-pink uppercase tracking-wider">
+                                Status: {p.status || "active"} | {p.blood_group || "O+"}
+                              </p>
+                              <p className="font-mono text-xs sm:text-sm text-white/40 select-all break-all">
+                                {p.address.slice(0, 12)}...{p.address.slice(-10)}
+                              </p>
+                            </div>
+                            
+                            <span className="text-xs sm:text-sm font-orbitron uppercase tracking-widest text-cyber-blue opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                              Click to Edit
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
+
 
                 {/* Edit Patient Modal */}
                 {editPatientAddress && (
@@ -3079,6 +3274,775 @@ export default function ProviderDashboard() {
           </div>
         )}
 
+        {/* Tab: Request Meds & Equipments (Doctors only) */}
+        {activeTab === "request-assets" && (
+          <div className="space-y-6 w-full animate-fade-in">
+            {/* Sub-tab Navigation */}
+            <div className="flex border-b border-white/10 pb-4 gap-4 font-orbitron font-bold text-sm shrink-0">
+              <button
+                onClick={() => setRequestAssetTab("meds")}
+                className={`px-6 py-3 border rounded transition-all cursor-pointer ${requestAssetTab === "meds" ? "bg-cyber-blue/10 border-cyber-blue text-cyber-blue drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                Request Medications
+              </button>
+              <button
+                onClick={() => setRequestAssetTab("equipments")}
+                className={`px-6 py-3 border rounded transition-all cursor-pointer ${requestAssetTab === "equipments" ? "bg-cyber-blue/10 border-cyber-blue text-cyber-blue drop-shadow-[0_0_8px_rgba(0,243,255,0.1)]" : "border-white/10 text-white/70 hover:text-white"}`}
+              >
+                Log Implantation
+              </button>
+            </div>
+
+            {requestAssetTab === "meds" && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Request Narcotic Form */}
+                <div className="p-6 border border-white/10 bg-white/[0.01] rounded relative h-fit">
+                  <div className="absolute top-0 left-0 w-8 h-[2px] bg-cyber-blue" />
+                  <div className="absolute top-0 left-0 w-[2px] h-8 bg-cyber-blue" />
+                  
+                  <h4 className="font-orbitron text-xs text-white font-bold flex items-center gap-1.5 mb-4">
+                    <PlusCircle size={14} className="text-cyber-blue" />
+                    <span>File Controlled Narcotic Request</span>
+                  </h4>
+                  
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    setIsRequestingNarcotic(true);
+                    setError("");
+                    setSuccessMsg("");
+                    try {
+                      const resp = await fetch(`${API_URL}/api/admin/regulatory/narcotics/request`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          drug_name: reqDrugName,
+                          dosage: reqDosage,
+                          patient_address: reqPatientAddr,
+                          requester_doctor: walletAddress
+                        })
+                      });
+                      if (resp.ok) {
+                        setSuccessMsg("Narcotic request filed successfully. Awaiting admin signature.");
+                        setReqPatientAddr("");
+                        fetchNarcotics();
+                      } else {
+                        const errData = await resp.json();
+                        setError(errData.error || "Failed to submit request.");
+                      }
+                    } catch (e) {
+                      setError("Network error submitting request.");
+                    } finally {
+                      setIsRequestingNarcotic(false);
+                    }
+                  }} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-orbitron uppercase text-white/60 mb-1">Select Restricted Drug</label>
+                      <select
+                        value={reqDrugName}
+                        onChange={(e) => {
+                          setReqDrugName(e.target.value);
+                          const med = medicineList.find(m => m.drug_name === e.target.value);
+                          if (med) setReqDosage(med.dosage_strength);
+                        }}
+                        className="w-full bg-black border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue font-mono"
+                      >
+                        {medicineList.map(m => (
+                          <option key={m.id} value={m.drug_name}>{m.drug_name} ({m.dosage_strength})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-orbitron uppercase text-white/60 mb-1">Dosage strength</label>
+                      <input
+                        type="text"
+                        required
+                        value={reqDosage}
+                        onChange={(e) => setReqDosage(e.target.value)}
+                        className="w-full bg-black border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-orbitron uppercase text-white/60 mb-1">Select Patient</label>
+                      <select
+                        value={reqPatientAddr}
+                        onChange={(e) => setReqPatientAddr(e.target.value)}
+                        className="w-full bg-black border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-cyber-blue font-mono"
+                      >
+                        <option value="">-- Choose Patient --</option>
+                        {admittedPatients.map(p => (
+                          <option key={p.address} value={p.address}>{p.name} ({p.address.slice(0,10)}...)</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isRequestingNarcotic || !reqPatientAddr}
+                      className="w-full bg-cyber-blue text-black font-orbitron font-bold py-2 text-xs uppercase tracking-wider hover:bg-cyber-blue/80 transition-all cursor-pointer disabled:opacity-30"
+                    >
+                      {isRequestingNarcotic ? "Filing Request..." : "File Request"}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Doctor's Narcotics History */}
+                <div className="lg:col-span-2 p-6 border border-white/10 bg-black/40 rounded space-y-4">
+                  <h4 className="font-orbitron text-xs text-white font-bold flex items-center gap-1.5 border-b border-white/5 pb-2">
+                    <List size={14} className="text-cyber-blue" />
+                    <span>My Controlled Substance Request Ledger</span>
+                  </h4>
+                  <div className="overflow-x-auto w-full">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead>
+                        <tr className="border-b border-white/10 text-white/50 text-[10px] uppercase font-orbitron">
+                          <th className="py-2.5">Medication</th>
+                          <th className="py-2.5">Dosage</th>
+                          <th className="py-2.5">Patient Address</th>
+                          <th className="py-2.5">Request Date</th>
+                          <th className="py-2.5 text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {narcoticLogs
+                          .filter(n => n.requester_doctor.toLowerCase() === walletAddress.toLowerCase())
+                          .map((n) => (
+                            <tr key={n.id} className="border-b border-white/5 hover:bg-white/[0.02]">
+                              <td className="py-3 font-bold text-white">{n.drug_name}</td>
+                              <td className="py-3 text-cyber-blue">{n.dosage}</td>
+                              <td className="py-3 text-white/60">{n.patient_address}</td>
+                              <td className="py-3 text-white/50">{n.requested_at ? n.requested_at.slice(0, 10) : "N/A"}</td>
+                              <td className="py-3 text-right">
+                                <span className={`px-2 py-0.5 border text-[9px] rounded font-orbitron font-bold ${n.status === "authorized" || n.status === "Authorized" ? "bg-green-950/20 border-green-500/40 text-green-400" : n.status === "rejected" ? "bg-red-950/20 border-red-500/40 text-red-400" : "bg-yellow-950/20 border-yellow-500/40 text-cyber-yellow animate-pulse"}`}>
+                                  {n.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        }
+                        {narcoticLogs.filter(n => n.requester_doctor.toLowerCase() === walletAddress.toLowerCase()).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-white/30 italic">No narcotic requests filed by your credentials.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {requestAssetTab === "equipments" && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Implantation Form */}
+                <div className="p-6 border border-white/10 bg-white/[0.01] rounded relative h-fit">
+                  <div className="absolute top-0 left-0 w-8 h-[2px] bg-cyber-pink" />
+                  <div className="absolute top-0 left-0 w-[2px] h-8 bg-cyber-pink" />
+                  
+                  <h4 className="font-orbitron text-xs text-white font-bold flex items-center gap-1.5 mb-4">
+                    <PlusCircle size={14} className="text-cyber-pink" />
+                    <span>Log Patient Implantation</span>
+                  </h4>
+                  
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    setIsLoggingImplant(true);
+                    setError("");
+                    setSuccessMsg("");
+                    try {
+                      const resp = await fetch(`${API_URL}/api/admin/regulatory/devices/implant`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          serial_number: impSerialNumber,
+                          patient_address: impPatientAddr,
+                          implanted_by: walletAddress
+                        })
+                      });
+                      if (resp.ok) {
+                        const data = await resp.json();
+                        setSuccessMsg(`Device successfully implanted and registered on blockchain! Hash: ${data.tx_hash}`);
+                        setImpSerialNumber("");
+                        setImpPatientAddr("");
+                        fetchDevices();
+                      } else {
+                        const errData = await resp.json();
+                        setError(errData.error || "Failed to log device implantation.");
+                      }
+                    } catch (e) {
+                      setError("Network error submitting implantation.");
+                    } finally {
+                      setIsLoggingImplant(false);
+                    }
+                  }} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-orbitron uppercase text-white/60 mb-1">Select Available Serial Number</label>
+                      <select
+                        value={impSerialNumber}
+                        onChange={(e) => setImpSerialNumber(e.target.value)}
+                        className="w-full bg-black border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-cyber-pink font-mono"
+                      >
+                        <option value="">-- Choose Serial ID --</option>
+                        {deviceList.filter(d => d.status === "in-stock").map(d => (
+                          <option key={d.serial_number} value={d.serial_number}>{d.device_name} (SN: {d.serial_number})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-orbitron uppercase text-white/60 mb-1">Select Patient</label>
+                      <select
+                        value={impPatientAddr}
+                        onChange={(e) => setImpPatientAddr(e.target.value)}
+                        className="w-full bg-black border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-cyber-pink font-mono"
+                      >
+                        <option value="">-- Choose Patient --</option>
+                        {admittedPatients.map(p => (
+                          <option key={p.address} value={p.address}>{p.name} ({p.address.slice(0,10)}...)</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isLoggingImplant || !impSerialNumber || !impPatientAddr}
+                      className="w-full bg-cyber-pink text-black font-orbitron font-bold py-2 text-xs uppercase tracking-wider hover:bg-cyber-pink/80 transition-all cursor-pointer disabled:opacity-30"
+                    >
+                      {isLoggingImplant ? "Finalizing Implantation..." : "Finalize Implantation"}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Implanted Devices List */}
+                <div className="lg:col-span-2 p-6 border border-white/10 bg-black/40 rounded space-y-4">
+                  <h4 className="font-orbitron text-xs text-white font-bold flex items-center gap-1.5 border-b border-white/5 pb-2">
+                    <List size={14} className="text-cyber-pink" />
+                    <span>My Implanted Devices Ledger</span>
+                  </h4>
+                  <div className="overflow-x-auto w-full">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead>
+                        <tr className="border-b border-white/10 text-white/50 text-[10px] uppercase font-orbitron">
+                          <th className="py-2.5">Device Name</th>
+                          <th className="py-2.5">Serial ID</th>
+                          <th className="py-2.5">Patient Address</th>
+                          <th className="py-2.5">Date Implanted</th>
+                          <th className="py-2.5 text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {deviceList
+                          .filter(d => d.implanted_by && d.implanted_by.toLowerCase() === walletAddress.toLowerCase())
+                          .map((d) => (
+                            <tr key={d.serial_number} className="border-b border-white/5 hover:bg-white/[0.02]">
+                              <td className="py-3 font-bold text-white">{d.device_name}</td>
+                              <td className="py-3 text-cyber-blue">{d.serial_number}</td>
+                              <td className="py-3 text-white/60">{d.patient_address}</td>
+                              <td className="py-3 text-white/50">{d.implanted_at ? d.implanted_at.slice(0,10) : "N/A"}</td>
+                              <td className="py-3 text-right">
+                                <span className={`px-2 py-0.5 border text-[9px] rounded font-orbitron font-bold ${d.status === "recalled" ? "bg-red-500 text-black border-red-500 animate-pulse" : "bg-green-950/20 border-green-500/40 text-green-400"}`}>
+                                  {d.status.toUpperCase()}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        }
+                        {deviceList.filter(d => d.implanted_by && d.implanted_by.toLowerCase() === walletAddress.toLowerCase()).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-white/30 italic">No device implantations logged by your credentials.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Emergency Override */}
+        {activeTab === "emergency-override" && (
+          <div className="w-full animate-fade-in space-y-6">
+            <div className="p-8 border border-red-500/20 bg-red-950/10 relative rounded-lg">
+              <div className="absolute top-0 left-0 w-12 h-[2px] bg-red-500" />
+              <div className="absolute top-0 left-0 w-[2px] h-12 bg-red-500" />
+              <div className="absolute bottom-0 right-0 w-12 h-[2px] bg-red-500/40" />
+              <div className="absolute bottom-0 right-0 w-[2px] h-12 bg-red-500/40" />
+
+              <div className="flex items-start gap-4 pb-6 border-b border-red-500/20 mb-8">
+                <div className="w-12 h-12 rounded-lg bg-red-500/10 border border-red-500/30 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="text-red-400" size={24} />
+                </div>
+                <div>
+                  <h2 className="font-orbitron text-base tracking-widest uppercase text-white font-bold">Emergency Protocol Override</h2>
+                  <p className="text-sm text-white/50 mt-1.5 max-w-2xl">Gain immediate clinical access to any external patient profile in case of a critical emergency. This action is logged, requires institutional co-signature, and is subject to audit review.</p>
+                </div>
+                <div className="ml-auto shrink-0 flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-4 py-2 rounded">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-red-400 font-orbitron text-[10px] font-bold uppercase tracking-wider">Protocol Active</span>
+                </div>
+              </div>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setError(""); setSuccessMsg("");
+                const form = e.currentTarget;
+                const pAddress = (form.elements.namedItem("overridePatient") as HTMLSelectElement).value;
+                const reason = (form.elements.namedItem("overrideReason") as HTMLInputElement).value;
+                try {
+                  const resp = await fetch(`${API_URL}/api/admin/doctor/override-access`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ patient_address: pAddress, doctor_address: walletAddress, reason })
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    setSuccessMsg(data.message);
+                    form.reset();
+                    fetchDoctorPatients(walletAddress);
+                    fetchOverrides();
+                  } else {
+                    const errData = await resp.json();
+                    setError(errData.error || "Failed to trigger override.");
+                  }
+                } catch { setError("Network error triggering override."); }
+              }} className="space-y-6">
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs uppercase text-white/60 mb-2 font-orbitron tracking-wider">Target Patient</label>
+                    <select name="overridePatient" required defaultValue=""
+                      className="w-full bg-black/60 border border-white/20 p-4 text-white focus:outline-none focus:border-red-500 text-sm appearance-none cursor-pointer rounded-lg transition-colors">
+                      <option value="" disabled>— Select a patient by name —</option>
+                      {admittedPatients.map(p => (
+                        <option key={p.address} value={p.address}>
+                          {p.name} · {p.address.slice(0, 12)}...{p.address.slice(-6)}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-white/30 mt-1.5 font-mono">Patient wallet address will be auto-populated</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs uppercase text-white/60 mb-2 font-orbitron tracking-wider">Clinical Justification / Override Token</label>
+                    <input name="overrideReason" type="text" required
+                      placeholder="e.g. Critical hypoxia telemetry override — ICU transfer"
+                      className="w-full bg-black/60 border border-white/20 p-4 text-white focus:outline-none focus:border-red-500 text-sm rounded-lg transition-colors placeholder:text-white/20" />
+                    <p className="text-[10px] text-white/30 mt-1.5 font-mono">This reason is immutably logged to the blockchain audit trail</p>
+                  </div>
+                </div>
+
+                <div className="p-4 border border-amber-500/20 bg-amber-500/5 rounded-lg flex items-start gap-3">
+                  <ShieldAlert className="text-amber-400 shrink-0 mt-0.5" size={16} />
+                  <p className="text-xs text-amber-300/80">This override request will enter the <strong>Approval Queue</strong> and requires <strong>2 co-signatures</strong> from other clinicians or an admin before it becomes fully active.</p>
+                </div>
+
+                <button type="submit"
+                  className="w-full bg-red-950/60 border border-red-500/60 hover:bg-red-500 hover:text-black text-red-400 font-orbitron font-bold py-4 text-sm uppercase tracking-widest transition-all cursor-pointer rounded-lg">
+                  🔴 &nbsp;Activate Emergency Override
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Care Transfer */}
+        {activeTab === "care-transfer" && (
+          <div className="w-full animate-fade-in space-y-6">
+            <div className="p-8 border border-cyber-blue/20 bg-cyber-blue/5 relative rounded-lg">
+              <div className="absolute top-0 left-0 w-12 h-[2px] bg-cyber-blue" />
+              <div className="absolute top-0 left-0 w-[2px] h-12 bg-cyber-blue" />
+              <div className="absolute bottom-0 right-0 w-12 h-[2px] bg-cyber-blue/40" />
+              <div className="absolute bottom-0 right-0 w-[2px] h-12 bg-cyber-blue/40" />
+
+              <div className="flex items-start gap-4 pb-6 border-b border-cyber-blue/20 mb-8">
+                <div className="w-12 h-12 rounded-lg bg-cyber-blue/10 border border-cyber-blue/30 flex items-center justify-center shrink-0">
+                  <Users className="text-cyber-blue" size={24} />
+                </div>
+                <div>
+                  <h2 className="font-orbitron text-base tracking-widest uppercase text-white font-bold">Patient Care Transfer Request</h2>
+                  <p className="text-sm text-white/50 mt-1.5 max-w-2xl">File an authorized transfer request to permanently re-assign a patient under your clinical jurisdiction to another department or specialist. Subject to institutional approval.</p>
+                </div>
+                <div className="ml-auto shrink-0 flex items-center gap-2 bg-cyber-blue/10 border border-cyber-blue/30 px-4 py-2 rounded">
+                  <span className="w-2 h-2 rounded-full bg-cyber-blue" />
+                  <span className="text-cyber-blue font-orbitron text-[10px] font-bold uppercase tracking-wider">Authorized Channel</span>
+                </div>
+              </div>
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setError(""); setSuccessMsg("");
+                const form = e.currentTarget;
+                const pAddress = (form.elements.namedItem("transferPatient") as HTMLSelectElement).value;
+                const reason = (form.elements.namedItem("transferReason") as HTMLInputElement).value;
+                try {
+                  const resp = await fetch(`${API_URL}/api/admin/doctor/transfer-care`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ patient_address: pAddress, doctor_address: walletAddress, reason })
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    setSuccessMsg(data.message);
+                    form.reset();
+                    fetchDoctorPatients(walletAddress);
+                  } else {
+                    const errData = await resp.json();
+                    setError(errData.error || "Failed to file transfer.");
+                  }
+                } catch { setError("Network error filing transfer."); }
+              }} className="space-y-6">
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-xs uppercase text-white/60 mb-2 font-orbitron tracking-wider">Patient to Transfer</label>
+                    <select name="transferPatient" required defaultValue=""
+                      className="w-full bg-black/60 border border-white/20 p-4 text-white focus:outline-none focus:border-cyber-blue text-sm appearance-none cursor-pointer rounded-lg transition-colors">
+                      <option value="" disabled>— Select a patient by name —</option>
+                      {admittedPatients.map(p => (
+                        <option key={p.address} value={p.address}>
+                          {p.name} · {p.address.slice(0, 12)}...{p.address.slice(-6)}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-white/30 mt-1.5 font-mono">Only patients under your care are listed</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs uppercase text-white/60 mb-2 font-orbitron tracking-wider">Reason for Transfer</label>
+                    <input name="transferReason" type="text" required
+                      placeholder="e.g. Cardiological specialist consultation transfer"
+                      className="w-full bg-black/60 border border-white/20 p-4 text-white focus:outline-none focus:border-cyber-blue text-sm rounded-lg transition-colors placeholder:text-white/20" />
+                    <p className="text-[10px] text-white/30 mt-1.5 font-mono">Describe the clinical rationale for this transfer</p>
+                  </div>
+                </div>
+
+                <div className="p-4 border border-cyber-blue/20 bg-cyber-blue/5 rounded-lg flex items-start gap-3">
+                  <Users className="text-cyber-blue shrink-0 mt-0.5" size={16} />
+                  <p className="text-xs text-cyber-blue/80">Care transfer requests are reviewed by hospital administration. Upon approval, the patient will be re-assigned in the clinical registry.</p>
+                </div>
+
+                <button type="submit"
+                  className="w-full bg-cyber-blue/10 border border-cyber-blue/50 hover:bg-cyber-blue hover:text-black text-cyber-blue font-orbitron font-bold py-4 text-sm uppercase tracking-widest transition-all cursor-pointer rounded-lg">
+                  ⟶ &nbsp;Request Patient Care Transfer
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Transfer & Override */}
+        {activeTab === "transfer-override" && (
+          <div className="space-y-6 w-full animate-fade-in">
+
+            {/* Sub-tab Navigation */}
+            <div className="flex gap-1 bg-black/60 border border-white/10 p-1 rounded w-fit">
+              {(!isAdmin) && (
+                <>
+                  <button
+                    onClick={() => setTransferOverrideSubTab("override")}
+                    className={`px-5 py-2.5 rounded text-[10px] font-orbitron font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                      transferOverrideSubTab === "override"
+                        ? "bg-red-500/20 border border-red-500/50 text-red-400"
+                        : "text-white/50 hover:text-white"
+                    }`}
+                  >
+                    <ShieldAlert size={12} />
+                    Emergency Override
+                  </button>
+                  <button
+                    onClick={() => setTransferOverrideSubTab("transfer")}
+                    className={`px-5 py-2.5 rounded text-[10px] font-orbitron font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                      transferOverrideSubTab === "transfer"
+                        ? "bg-cyber-blue/20 border border-cyber-blue/50 text-cyber-blue"
+                        : "text-white/50 hover:text-white"
+                    }`}
+                  >
+                    <Users size={12} />
+                    Care Transfer
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setTransferOverrideSubTab("queue")}
+                className={`px-5 py-2.5 rounded text-[10px] font-orbitron font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+                  transferOverrideSubTab === "queue"
+                    ? "bg-cyber-pink/20 border border-cyber-pink/50 text-cyber-pink"
+                    : "text-white/50 hover:text-white"
+                }`}
+              >
+                <Shield size={12} />
+                Approval Queue
+                {overrideList.filter(o => o.status === "active").length > 0 && (
+                  <span className="bg-cyber-pink text-black text-[9px] font-bold px-1.5 py-0.5 rounded">
+                    {overrideList.filter(o => o.status === "active").length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Sub-tab: Emergency Override */}
+            {transferOverrideSubTab === "override" && !isAdmin && (
+              <div className="p-6 border border-white/15 bg-white/[0.01] relative rounded max-w-2xl">
+                <div className="absolute top-0 left-0 w-8 h-[2px] bg-red-500" />
+                <div className="absolute top-0 left-0 w-[2px] h-8 bg-red-500" />
+
+                <div className="flex items-center gap-2 pb-4 border-b border-white/10 mb-6">
+                  <ShieldAlert className="text-red-400 animate-pulse" size={16} />
+                  <div>
+                    <h3 className="font-orbitron text-xs tracking-widest uppercase text-white font-bold">Emergency Protocol Override</h3>
+                    <p className="text-[10px] text-white/40 mt-0.5">Gain immediate clinical access to any external patient in a critical emergency.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setError(""); setSuccessMsg("");
+                  const form = e.currentTarget;
+                  const pAddress = (form.elements.namedItem("overridePatient") as HTMLSelectElement).value;
+                  const reason = (form.elements.namedItem("overrideReason") as HTMLInputElement).value;
+                  try {
+                    const resp = await fetch(`${API_URL}/api/admin/doctor/override-access`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ patient_address: pAddress, doctor_address: walletAddress, reason })
+                    });
+                    if (resp.ok) {
+                      const data = await resp.json();
+                      setSuccessMsg(data.message);
+                      form.reset();
+                      fetchDoctorPatients(walletAddress);
+                      fetchOverrides();
+                    } else {
+                      const errData = await resp.json();
+                      setError(errData.error || "Failed to trigger override.");
+                    }
+                  } catch { setError("Network error triggering override."); }
+                }} className="space-y-4 font-mono text-xs">
+                  <div>
+                    <label className="block text-[9px] uppercase text-white/60 mb-1.5">Select Patient</label>
+                    <select name="overridePatient" required defaultValue=""
+                      className="w-full bg-black border border-white/20 p-2.5 text-white focus:outline-none focus:border-red-500 text-xs appearance-none cursor-pointer rounded">
+                      <option value="" disabled>— Select a patient by name —</option>
+                      {admittedPatients.map(p => (
+                        <option key={p.address} value={p.address}>
+                          {p.name} ({p.address.slice(0, 10)}...{p.address.slice(-6)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] uppercase text-white/60 mb-1.5">Clinical Reason / Override Token</label>
+                    <input name="overrideReason" type="text" required placeholder="e.g. Critical hypoxia telemetry override"
+                      className="w-full bg-black border border-white/20 p-2.5 text-white focus:outline-none focus:border-red-500 text-xs rounded" />
+                  </div>
+                  <button type="submit"
+                    className="w-full bg-red-950/40 border border-red-500/50 hover:bg-red-500 hover:text-black text-red-400 font-orbitron font-bold py-2.5 text-[10px] uppercase tracking-widest transition-all cursor-pointer rounded">
+                    Activate Emergency Override
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Sub-tab: Care Transfer */}
+            {transferOverrideSubTab === "transfer" && !isAdmin && (
+              <div className="p-6 border border-white/15 bg-white/[0.01] relative rounded max-w-2xl">
+                <div className="absolute top-0 left-0 w-8 h-[2px] bg-cyber-blue" />
+                <div className="absolute top-0 left-0 w-[2px] h-8 bg-cyber-blue" />
+
+                <div className="flex items-center gap-2 pb-4 border-b border-white/10 mb-6">
+                  <Users className="text-cyber-blue" size={16} />
+                  <div>
+                    <h3 className="font-orbitron text-xs tracking-widest uppercase text-white font-bold">Patient Care Transfer Request</h3>
+                    <p className="text-[10px] text-white/40 mt-0.5">File an authorized request to transfer care of a patient under your clinical jurisdiction.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setError(""); setSuccessMsg("");
+                  const form = e.currentTarget;
+                  const pAddress = (form.elements.namedItem("transferPatient") as HTMLSelectElement).value;
+                  const reason = (form.elements.namedItem("transferReason") as HTMLInputElement).value;
+                  try {
+                    const resp = await fetch(`${API_URL}/api/admin/doctor/transfer-care`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ patient_address: pAddress, doctor_address: walletAddress, reason })
+                    });
+                    if (resp.ok) {
+                      const data = await resp.json();
+                      setSuccessMsg(data.message);
+                      form.reset();
+                      fetchDoctorPatients(walletAddress);
+                    } else {
+                      const errData = await resp.json();
+                      setError(errData.error || "Failed to file transfer.");
+                    }
+                  } catch { setError("Network error filing transfer."); }
+                }} className="space-y-4 font-mono text-xs">
+                  <div>
+                    <label className="block text-[9px] uppercase text-white/60 mb-1.5">Select Patient</label>
+                    <select name="transferPatient" required defaultValue=""
+                      className="w-full bg-black border border-white/20 p-2.5 text-white focus:outline-none focus:border-cyber-blue text-xs appearance-none cursor-pointer rounded">
+                      <option value="" disabled>— Select a patient by name —</option>
+                      {admittedPatients.map(p => (
+                        <option key={p.address} value={p.address}>
+                          {p.name} ({p.address.slice(0, 10)}...{p.address.slice(-6)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] uppercase text-white/60 mb-1.5">Reason for Transfer</label>
+                    <input name="transferReason" type="text" required placeholder="e.g. Cardiological specialist consultation transfer"
+                      className="w-full bg-black border border-white/20 p-2.5 text-white focus:outline-none focus:border-cyber-blue text-xs rounded" />
+                  </div>
+                  <button type="submit"
+                    className="w-full bg-cyber-blue/10 border border-cyber-blue/40 hover:bg-cyber-blue hover:text-black text-cyber-blue font-orbitron font-bold py-2.5 text-[10px] uppercase tracking-widest transition-all cursor-pointer rounded">
+                    Request Patient Care Transfer
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Sub-tab: Approval Queue (visible to both doctors and admins) */}
+            {transferOverrideSubTab === "queue" && (
+              <div className="p-6 border border-white/15 bg-white/[0.01] relative rounded">
+                <div className="absolute top-0 left-0 w-8 h-[2px] bg-cyber-pink" />
+                <div className="absolute top-0 left-0 w-[2px] h-8 bg-cyber-pink" />
+
+                <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+                  <div className="flex items-center gap-2">
+                    <Shield className="text-cyber-pink" size={16} />
+                    <div>
+                      <h3 className="font-orbitron text-xs tracking-widest uppercase text-white font-bold">
+                        Consensus Override Validation & Endorsement Queue
+                      </h3>
+                      <p className="text-[10px] text-white/40 mt-0.5">
+                        {isAdmin
+                          ? "Admin view — you may co-sign any pending override request as an institutional approver."
+                          : "Clinician view — co-sign override requests raised by other doctors to endorse them."}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-white/40 font-mono border border-white/10 px-2 py-1 rounded">
+                      {isAdmin ? "🔐 Admin Approver" : "👨‍⚕️ Clinician Review"}
+                    </span>
+                    <span className="text-[10px] text-white/40 font-mono">Required: 2 co-signatures</span>
+                  </div>
+                </div>
+
+                {overrideList.length === 0 ? (
+                  <div className="text-center py-14 text-white/40 border border-dashed border-white/10 rounded">
+                    <Shield size={32} className="mx-auto mb-3 opacity-30" />
+                    <p className="font-orbitron text-xs uppercase tracking-wider">No override requests pending review.</p>
+                  </div>
+                ) : (
+                  <div className="border border-white/10 bg-black/40 overflow-x-auto rounded">
+                    <table className="w-full text-left border-collapse text-xs font-mono">
+                      <thead>
+                        <tr className="border-b border-white/10 bg-white/5 text-white/60 uppercase font-orbitron font-bold text-[10px] tracking-wider">
+                          <th className="p-4">ID</th>
+                          <th className="p-4">Patient (Target)</th>
+                          <th className="p-4">Initiating Doctor</th>
+                          <th className="p-4">Override Reason</th>
+                          <th className="p-4">Endorsements</th>
+                          <th className="p-4">Status</th>
+                          <th className="p-4 text-right">{isAdmin ? "Admin Action" : "Action"}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-white/80">
+                        {overrideList.map((ov) => {
+                          const hasVoted = ov.voted_doctors.toLowerCase().split(",").includes(walletAddress.toLowerCase());
+                          const isCreator = ov.doctor_address.toLowerCase() === walletAddress.toLowerCase();
+                          const canVote = !hasVoted && (isAdmin || !isCreator) && ov.status === "active";
+
+                          return (
+                            <tr key={ov.id} className="hover:bg-white/[0.02]">
+                              <td className="p-4 font-bold text-cyber-blue">#{ov.id}</td>
+                              <td className="p-4">
+                                <div className="font-bold text-white">{ov.patient_name}</div>
+                                <div className="text-[10px] text-white/40">{ov.patient_address.slice(0, 14)}...</div>
+                              </td>
+                              <td className="p-4">
+                                <div className={`font-bold ${isCreator ? "text-cyber-blue" : "text-white"}`}>
+                                  {isCreator ? "You" : ov.doctor_name}
+                                </div>
+                                <div className="text-[10px] text-white/40">{ov.doctor_address.slice(0, 14)}...</div>
+                              </td>
+                              <td className="p-4 max-w-[200px] truncate" title={ov.reason}>{ov.reason}</td>
+                              <td className="p-4">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-white">{ov.votes_count}/2</span>
+                                  <div className="w-16 bg-white/10 h-1.5 rounded-full overflow-hidden">
+                                    <div className={`h-full transition-all ${ov.votes_count >= 2 ? "bg-emerald-500" : "bg-cyber-blue"}`}
+                                      style={{ width: `${Math.min(ov.votes_count * 50, 100)}%` }} />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                {ov.status === "endorsed" ? (
+                                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold">✓ Endorsed</span>
+                                ) : (
+                                  <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold animate-pulse">Pending</span>
+                                )}
+                              </td>
+                              <td className="p-4 text-right">
+                                <button
+                                  onClick={async () => {
+                                    setError(""); setSuccessMsg("");
+                                    setIsVoting(ov.id);
+                                    try {
+                                      const resp = await fetch(`${API_URL}/api/admin/doctor/override-vote`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ override_id: ov.id, doctor_address: walletAddress })
+                                      });
+                                      if (resp.ok) {
+                                        const data = await resp.json();
+                                        setSuccessMsg(data.message);
+                                        fetchOverrides();
+                                        if (!isAdmin) fetchDoctorPatients(walletAddress);
+                                      } else {
+                                        const errData = await resp.json();
+                                        setError(errData.error || "Failed to co-sign.");
+                                      }
+                                    } catch { setError("Network error co-signing."); }
+                                    finally { setIsVoting(null); }
+                                  }}
+                                  disabled={!canVote || isVoting === ov.id}
+                                  className={`px-4 py-2 border rounded font-orbitron font-bold text-[9px] uppercase tracking-widest transition-all ${
+                                    canVote
+                                      ? isAdmin
+                                        ? "border-emerald-500/50 hover:bg-emerald-500 hover:text-black text-emerald-400 cursor-pointer"
+                                        : "border-cyber-pink/50 hover:bg-cyber-pink hover:text-black text-cyber-pink cursor-pointer"
+                                      : "border-white/5 text-white/20 cursor-not-allowed bg-white/[0.01]"
+                                  }`}
+                                >
+                                  {isVoting === ov.id
+                                    ? "Processing..."
+                                    : hasVoted
+                                    ? "✓ Co-signed"
+                                    : isCreator && !isAdmin
+                                    ? "Your Request"
+                                    : ov.status === "endorsed"
+                                    ? "Completed"
+                                    : isAdmin
+                                    ? "✓ Approve"
+                                    : "Co-Sign"}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Tab 7: Readme Logs */}
         {activeTab === "readme-logs" && (
           <div className="w-full animate-fade-in">
@@ -3090,35 +4054,59 @@ export default function ProviderDashboard() {
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
                   <Terminal className="text-cyber-pink" size={18} />
-                  <h3 className="font-orbitron text-sm tracking-widest uppercase text-white font-bold">Live System Audits</h3>
+                  <h3 className="font-orbitron text-sm tracking-widest uppercase text-white font-bold">{isAdmin ? "Live System Audits" : "ML Patient Vitals Alerts"}</h3>
                 </div>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${isAdmin ? "bg-emerald-500" : "bg-red-500"}`} />
               </div>
 
-              <div className="flex-1 bg-black/50 border border-white/10 rounded p-5 font-mono text-xs sm:text-sm space-y-4 overflow-y-auto max-h-[550px]">
-                <div className="text-white/40 border-b border-white/5 pb-2.5 flex justify-between tracking-wider font-bold text-xs uppercase">
-                  <span>Timestamp</span>
-                  <span>Event Details</span>
+              {isAdmin ? (
+                <div className="flex-1 bg-black/50 border border-white/10 rounded p-5 font-mono text-xs sm:text-sm space-y-4 overflow-y-auto max-h-[550px]">
+                  <div className="text-white/40 border-b border-white/5 pb-2.5 flex justify-between tracking-wider font-bold text-xs uppercase">
+                    <span>Timestamp</span>
+                    <span>Event Details</span>
+                  </div>
+                  {hospitalLogs.map((log) => (
+                    <div key={log.id} className="flex gap-5 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                      <span className="text-white/40 shrink-0 select-none font-bold text-xs sm:text-sm">{log.timestamp}</span>
+                      <span className={
+                        log.action_type === "NARCOTICS" ? "text-cyber-blue" :
+                        log.action_type === "ADMISSION" || log.action_type === "DOCTOR" ? "text-emerald-400" :
+                        log.action_type === "IMPLANTABLE" && log.message.includes("RECALLED") ? "text-red-400 font-semibold" :
+                        log.action_type === "IMPLANTABLE" ? "text-purple-400" : "text-white/80"
+                      }>
+                        [{log.action_type}] {log.message}
+                      </span>
+                    </div>
+                  ))}
+                  {hospitalLogs.length === 0 && (
+                    <div className="text-center text-white/30 py-12 text-sm">
+                      No active audit logs found in the ledger database.
+                    </div>
+                  )}
                 </div>
-                {hospitalLogs.map((log) => (
-                  <div key={log.id} className="flex gap-5 border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                    <span className="text-white/40 shrink-0 select-none font-bold text-xs sm:text-sm">{log.timestamp}</span>
-                    <span className={
-                      log.action_type === "NARCOTICS" ? "text-cyber-blue" :
-                      log.action_type === "ADMISSION" || log.action_type === "DOCTOR" ? "text-emerald-400" :
-                      log.action_type === "IMPLANTABLE" && log.message.includes("RECALLED") ? "text-red-400 font-semibold" :
-                      log.action_type === "IMPLANTABLE" ? "text-purple-400" : "text-white/80"
-                    }>
-                      [{log.action_type}] {log.message}
-                    </span>
+              ) : (
+                <div className="flex-1 bg-black/50 border border-white/10 rounded p-5 font-mono text-xs sm:text-sm space-y-4 overflow-y-auto max-h-[550px]">
+                  <div className="text-white/40 border-b border-white/5 pb-2.5 flex justify-between tracking-wider font-bold text-xs uppercase">
+                    <span>Timestamp</span>
+                    <span>Patient Name / Address</span>
+                    <span>Metrics Triggered</span>
+                    <span className="text-right">Threat Level</span>
                   </div>
-                ))}
-                {hospitalLogs.length === 0 && (
-                  <div className="text-center text-white/30 py-12 text-sm">
-                    No active audit logs found in the ledger database.
-                  </div>
-                )}
-              </div>
+                  {doctorAnomalies.map((alert) => (
+                    <div key={alert.id} className="flex flex-col sm:flex-row justify-between border-b border-white/5 pb-2.5 last:border-0 last:pb-0 gap-2 text-red-400 font-semibold animate-pulse">
+                      <span className="text-white/40 shrink-0 font-bold">{alert.timestamp}</span>
+                      <span className="text-white">{alert.patient_name} ({alert.patient_address.slice(0, 10)}...)</span>
+                      <span>Pulse: {alert.heart_rate} BPM | SPO2: {alert.spo2}% | Temp: {alert.temperature}°C</span>
+                      <span className="bg-red-500 text-black px-2 py-0.5 rounded text-[10px] uppercase font-orbitron font-bold text-right shrink-0 h-fit">CRITICAL</span>
+                    </div>
+                  ))}
+                  {doctorAnomalies.length === 0 && (
+                    <div className="text-center text-white/30 py-12 text-sm">
+                      No anomalous patient events registered in your care zone.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

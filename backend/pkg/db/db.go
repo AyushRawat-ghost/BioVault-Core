@@ -172,6 +172,45 @@ func (d *Database) InitSchema() error {
 			('Ketamine Infusion', '50mg/ml', 40, TRUE),
 			('Diazepam Injection', '5mg/ml', 200, FALSE)
 		 ON CONFLICT (drug_name) DO NOTHING;`,
+
+		`CREATE TABLE IF NOT EXISTS appointments (
+			id SERIAL PRIMARY KEY,
+			patient_address VARCHAR(42) NOT NULL,
+			doctor_address VARCHAR(42) NOT NULL,
+			appointment_date VARCHAR(20) NOT NULL,
+			appointment_time VARCHAR(20) NOT NULL,
+			reason VARCHAR(255) NOT NULL,
+			status VARCHAR(20) DEFAULT 'scheduled',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`,
+
+		`ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS insurance_provider VARCHAR(100) DEFAULT 'Alteris Care';`,
+		`ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR(100) DEFAULT 'POL-ALT-88291';`,
+		`ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS insurance_coverage_limit NUMERIC(12,2) DEFAULT 50000.00;`,
+		`ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS insurance_policy_status VARCHAR(50) DEFAULT 'Active';`,
+
+		`CREATE TABLE IF NOT EXISTS insurance_claims (
+			id SERIAL PRIMARY KEY,
+			claim_id INT DEFAULT NULL,
+			patient_address VARCHAR(42) NOT NULL,
+			insurer_address VARCHAR(42) NOT NULL,
+			amount_requested NUMERIC(12,2) NOT NULL,
+			amount_approved NUMERIC(12,2) DEFAULT 0,
+			status VARCHAR(20) DEFAULT 'pending',
+			claim_cid VARCHAR(255) DEFAULT '',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`,
+
+		`CREATE TABLE IF NOT EXISTS emergency_overrides (
+			id SERIAL PRIMARY KEY,
+			patient_address VARCHAR(42) NOT NULL,
+			doctor_address VARCHAR(42) NOT NULL,
+			reason TEXT NOT NULL,
+			votes_count INTEGER DEFAULT 1,
+			voted_doctors TEXT DEFAULT '',
+			status VARCHAR(20) DEFAULT 'active',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`,
 	}
 
 	for i, q := range queries {

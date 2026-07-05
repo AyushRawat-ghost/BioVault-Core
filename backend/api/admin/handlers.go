@@ -1573,3 +1573,405 @@ func (h *AdminHandler) GetDoctorActivity(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// GetDoctorPatients returns all unique patients and their latest vitals for a doctor
+func (h *AdminHandler) GetDoctorPatients(c *gin.Context) {
+	doctorAddr := strings.ToLower(c.Query("address"))
+	if doctorAddr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "doctor address is required"})
+		return
+	}
+
+	// 1. Get unique patient addresses associated with this doctor (via appointments, medical records, or implants)
+	query := `
+		SELECT DISTINCT patient_address FROM (
+			SELECT patient_address FROM medical_records WHERE doctor_address = $1
+			UNION
+			SELECT patient_address FROM implantable_devices WHERE implanted_by = $1
+			UNION
+			SELECT patient_address FROM appointments WHERE doctor_address = $1
+		) AS doctor_patients
+	`
+	rows, err := h.DB.Conn.Query(query, doctorAddr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query doctor patients: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var patientAddresses []string
+	for rows.Next() {
+		var addr string
+		if errScan := rows.Scan(&addr); errScan == nil {
+			patientAddresses = append(patientAddresses, addr)
+		}
+	}
+
+	type PatientVital struct {
+		Address         string  `json:"address"`
+		Name            string  `json:"name"`
+		HeartRate       int     `json:"heart_rate"`
+		Systolic        int     `json:"systolic"`
+		Diastolic       int     `json:"diastolic"`
+		Spo2            int     `json:"spo2"`
+		Temperature     float64 `json:"temperature"`
+		AnomalyDetected bool    `json:"anomaly_detected"`
+		LastUpdated     string  `json:"last_updated"`
+	}
+
+	var list []PatientVital
+	for _, pAddr := range patientAddresses {
+		var name string
+		_ = h.DB.Conn.QueryRow("SELECT name FROM patient_profiles WHERE wallet_address = $1", pAddr).Scan(&name)
+		if name == "" {
+			name = pAddr[:8] + "..."
+		}
+
+		var v PatientVital
+		v.Address = pAddr
+		v.Name = name
+
+		vitalQuery := `
+			SELECT heart_rate, systolic, diastolic, spo2, temperature, anomaly_detected, created_at
+			FROM vitals_logs
+			WHERE patient_address = $1
+			ORDER BY created_at DESC
+			LIMIT 1
+		`
+		var createdAt time.Time
+		errVital := h.DB.Conn.QueryRow(vitalQuery, pAddr).Scan(&v.HeartRate, &v.Systolic, &v.Diastolic, &v.Spo2, &v.Temperature, &v.AnomalyDetected, &createdAt)
+		if errVital == nil {
+			v.LastUpdated = createdAt.Local().Format("2006-01-02 15:04:05")
+		} else {
+			v.HeartRate = 75
+			v.Systolic = 120
+			v.Diastolic = 80
+			v.Spo2 = 98
+			v.Temperature = 36.8
+			v.AnomalyDetected = false
+			v.LastUpdated = "No telemetry"
+		}
+		list = append(list, v)
+	}
+
+	if list == nil {
+		list = []PatientVital{}
+	}
+
+	c.JSON(http.StatusOK, list)
+}
+
+// GetAnomalyLogs returns vitals anomaly alerts from PostgreSQL
+func (h *AdminHandler) GetAnomalyLogs(c *gin.Context) {
+	doctorAddr := strings.ToLower(c.Query("address"))
+
+	type AnomalyLog struct {
+		ID             int     `json:"id"`
+		PatientAddress string  `json:"patient_address"`
+		PatientName    string  `json:"patient_name"`
+		HeartRate      int     `json:"heart_rate"`
+		Systolic       int     `json:"systolic"`
+		Diastolic      int     `json:"diastolic"`
+		Spo2           int     `json:"spo2"`
+		Temperature    float64 `json:"temperature"`
+		Timestamp      string  `json:"timestamp"`
+	}
+
+	var rows *sql.Rows
+	var err error
+
+	if doctorAddr != "" {
+		query := `
+			SELECT v.id, v.patient_address, COALESCE(p.name, ''), v.heart_rate, v.systolic, v.diastolic, v.spo2, v.temperature, v.created_at
+			FROM vitals_logs v
+			LEFT JOIN patient_profiles p ON v.patient_address = p.wallet_address
+			WHERE v.anomaly_detected = TRUE
+			  AND v.patient_address IN (
+				  SELECT DISTINCT patient_address FROM (
+					  SELECT patient_address FROM medical_records WHERE doctor_address = $1
+					  UNION
+					  SELECT patient_address FROM implantable_devices WHERE implanted_by = $1
+					  UNION
+					  SELECT patient_address FROM appointments WHERE doctor_address = $1
+				  ) AS dp
+			  )
+			ORDER BY v.created_at DESC
+			LIMIT 50
+		`
+		rows, err = h.DB.Conn.Query(query, doctorAddr)
+	} else {
+		query := `
+			SELECT v.id, v.patient_address, COALESCE(p.name, ''), v.heart_rate, v.systolic, v.diastolic, v.spo2, v.temperature, v.created_at
+			FROM vitals_logs v
+			LEFT JOIN patient_profiles p ON v.patient_address = p.wallet_address
+			WHERE v.anomaly_detected = TRUE
+			ORDER BY v.created_at DESC
+			LIMIT 50
+		`
+		rows, err = h.DB.Conn.Query(query)
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query anomaly logs: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var logs []AnomalyLog
+	for rows.Next() {
+		var l AnomalyLog
+		var t time.Time
+		if scanErr := rows.Scan(&l.ID, &l.PatientAddress, &l.PatientName, &l.HeartRate, &l.Systolic, &l.Diastolic, &l.Spo2, &l.Temperature, &t); scanErr == nil {
+			if l.PatientName == "" {
+				l.PatientName = l.PatientAddress[:8] + "..."
+			}
+			l.Timestamp = t.Local().Format("2006-01-02 15:04:05")
+			logs = append(logs, l)
+		}
+	}
+
+	if logs == nil {
+		logs = []AnomalyLog{}
+	}
+
+	c.JSON(http.StatusOK, logs)
+}
+
+// OverrideAccess allows a clinician to trigger emergency protocol override and assign patient
+func (h *AdminHandler) OverrideAccess(c *gin.Context) {
+	var req struct {
+		PatientAddress string `json:"patient_address" binding:"required"`
+		DoctorAddress  string `json:"doctor_address" binding:"required"`
+		Reason         string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	pAddr := strings.ToLower(req.PatientAddress)
+	dAddr := strings.ToLower(req.DoctorAddress)
+
+	// Verify patient exists
+	var pName string
+	err := h.DB.Conn.QueryRow("SELECT name FROM patient_profiles WHERE wallet_address = $1", pAddr).Scan(&pName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "patient wallet address not admitted in system"})
+		return
+	}
+
+	// Verify doctor exists
+	var dName string
+	err = h.DB.Conn.QueryRow("SELECT name FROM doctor_profiles WHERE wallet_address = $1", dAddr).Scan(&dName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "doctor credentials not admitted in system"})
+		return
+	}
+
+	// Link them via emergency completed appointment so patient is now under their care list
+	insertQuery := `
+		INSERT INTO appointments (patient_address, doctor_address, appointment_date, appointment_time, reason, status)
+		VALUES ($1, $2, 'EMERGENCY', 'NOW', $3, 'completed')
+	`
+	_, err = h.DB.Conn.Exec(insertQuery, pAddr, dAddr, req.Reason)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record emergency link: " + err.Error()})
+		return
+	}
+
+	// Insert into emergency_overrides tracking table
+	overrideInsert := `
+		INSERT INTO emergency_overrides (patient_address, doctor_address, reason, votes_count, voted_doctors, status)
+		VALUES ($1, $2, $3, 1, $4, 'active')
+	`
+	_, err = h.DB.Conn.Exec(overrideInsert, pAddr, dAddr, req.Reason, dAddr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to track emergency override: " + err.Error()})
+		return
+	}
+
+	// Log in hospital activity logs
+	LogHospitalActivity(h.DB.Conn, "EMERGENCY", fmt.Sprintf("Emergency Override Protocol activated by Dr. %s for Patient %s (%s). Reason: %s", dName, pName, pAddr[:10]+"...", req.Reason))
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": fmt.Sprintf("Emergency Protocol Override active. Patient %s has been linked to your care zone.", pName),
+	})
+}
+
+// TransferCare handles care transfer request and assigns patient to new doctor
+func (h *AdminHandler) TransferCare(c *gin.Context) {
+	var req struct {
+		PatientAddress string `json:"patient_address" binding:"required"`
+		DoctorAddress  string `json:"doctor_address" binding:"required"`
+		Reason         string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	pAddr := strings.ToLower(req.PatientAddress)
+	dAddr := strings.ToLower(req.DoctorAddress)
+
+	// Verify patient exists
+	var pName string
+	err := h.DB.Conn.QueryRow("SELECT name FROM patient_profiles WHERE wallet_address = $1", pAddr).Scan(&pName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "patient wallet address not admitted in system"})
+		return
+	}
+
+	// Verify doctor exists
+	var dName string
+	err = h.DB.Conn.QueryRow("SELECT name FROM doctor_profiles WHERE wallet_address = $1", dAddr).Scan(&dName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "doctor credentials not admitted in system"})
+		return
+	}
+
+	// Link them via completed appointment so patient is assigned
+	insertQuery := `
+		INSERT INTO appointments (patient_address, doctor_address, appointment_date, appointment_time, reason, status)
+		VALUES ($1, $2, 'TRANSFER', 'NOW', $3, 'completed')
+	`
+	_, err = h.DB.Conn.Exec(insertQuery, pAddr, dAddr, req.Reason)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record transfer link: " + err.Error()})
+		return
+	}
+
+	// Log in hospital activity logs
+	LogHospitalActivity(h.DB.Conn, "TRANSFER", fmt.Sprintf("Patient care transfer finalized: Patient %s (%s) assigned to Dr. %s. Reason: %s", pName, pAddr[:10]+"...", dName, req.Reason))
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": fmt.Sprintf("Care transfer complete. Patient %s has been assigned to your clinical dashboard.", pName),
+	})
+}
+
+// ListOverrides returns all logged emergency overrides
+func (h *AdminHandler) ListOverrides(c *gin.Context) {
+	query := `
+		SELECT o.id, o.patient_address, COALESCE(p.name, 'Unknown'), o.doctor_address, COALESCE(d.name, 'Unknown'), o.reason, o.votes_count, o.voted_doctors, o.status, o.created_at
+		FROM emergency_overrides o
+		LEFT JOIN patient_profiles p ON o.patient_address = p.wallet_address
+		LEFT JOIN doctor_profiles d ON o.doctor_address = d.wallet_address
+		ORDER BY o.created_at DESC
+	`
+	rows, err := h.DB.Conn.Query(query)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query overrides list: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	type OverrideInfo struct {
+		ID             int      `json:"id"`
+		PatientAddress string   `json:"patient_address"`
+		PatientName    string   `json:"patient_name"`
+		DoctorAddress  string   `json:"doctor_address"`
+		DoctorName     string   `json:"doctor_name"`
+		Reason         string   `json:"reason"`
+		VotesCount     int      `json:"votes_count"`
+		VotedDoctors   string   `json:"voted_doctors"`
+		Status         string   `json:"status"`
+		CreatedAt      string   `json:"created_at"`
+	}
+
+	var list []OverrideInfo
+	for rows.Next() {
+		var o OverrideInfo
+		var t time.Time
+		errScan := rows.Scan(&o.ID, &o.PatientAddress, &o.PatientName, &o.DoctorAddress, &o.DoctorName, &o.Reason, &o.VotesCount, &o.VotedDoctors, &o.Status, &t)
+		if errScan == nil {
+			o.CreatedAt = t.Local().Format("2006-01-02 15:04:05")
+			list = append(list, o)
+		}
+	}
+
+	if list == nil {
+		list = []OverrideInfo{}
+	}
+
+	c.JSON(http.StatusOK, list)
+}
+
+// VoteOverride allows other clinicians to co-sign or endorse an emergency override request
+func (h *AdminHandler) VoteOverride(c *gin.Context) {
+	var req struct {
+		OverrideID    int    `json:"override_id" binding:"required"`
+		DoctorAddress string `json:"doctor_address" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dAddr := strings.ToLower(req.DoctorAddress)
+
+	// Fetch current override
+	var currentVotes int
+	var votedDocs, pAddr, status string
+	querySelect := "SELECT votes_count, voted_doctors, patient_address, status FROM emergency_overrides WHERE id = $1"
+	err := h.DB.Conn.QueryRow(querySelect, req.OverrideID).Scan(&currentVotes, &votedDocs, &pAddr, &status)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "emergency override request not found"})
+		return
+	}
+
+	// Verify doctor exists
+	var dName string
+	err = h.DB.Conn.QueryRow("SELECT name FROM doctor_profiles WHERE wallet_address = $1", dAddr).Scan(&dName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "doctor credentials not admitted in system"})
+		return
+	}
+
+	// Check if already voted
+	docs := strings.Split(votedDocs, ",")
+	for _, doc := range docs {
+		if strings.TrimSpace(doc) == dAddr {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "you have already endorsed this emergency override"})
+			return
+		}
+	}
+
+	// Add vote
+	newVotedDocs := votedDocs + "," + dAddr
+	newVotesCount := currentVotes + 1
+	newStatus := status
+	if newVotesCount >= 2 {
+		newStatus = "endorsed"
+	}
+
+	updateQuery := `
+		UPDATE emergency_overrides
+		SET votes_count = $1, voted_doctors = $2, status = $3
+		WHERE id = $4
+	`
+	_, err = h.DB.Conn.Exec(updateQuery, newVotesCount, newVotedDocs, newStatus, req.OverrideID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record endorsement: " + err.Error()})
+		return
+	}
+
+	// Also link this patient to the endorsing doctor's care list as well
+	insertQuery := `
+		INSERT INTO appointments (patient_address, doctor_address, appointment_date, appointment_time, reason, status)
+		VALUES ($1, $2, 'ENDORSEMENT', 'NOW', 'Endorsed emergency override #' || $3, 'completed')
+	`
+	_, _ = h.DB.Conn.Exec(insertQuery, pAddr, dAddr, req.OverrideID)
+
+	// Log hospital activity
+	LogHospitalActivity(h.DB.Conn, "EMERGENCY", fmt.Sprintf("Emergency Override #%d for Patient %s co-signed/endorsed by Dr. %s. Status: %s.", req.OverrideID, pAddr[:10]+"...", dName, newStatus))
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": fmt.Sprintf("Co-signature/endorsement registered successfully. Override status: %s.", newStatus),
+	})
+}
+
+
+
+
