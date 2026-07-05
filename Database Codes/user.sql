@@ -1,40 +1,56 @@
-CREATE TABLE profiles (
-    wallet_address TEXT PRIMARY KEY, 
-    full_name TEXT NOT NULL,
-    role TEXT CHECK (role IN ('doctor', 'patient', 'insurer', 'admin')),
-    profile_img_cid TEXT,
-    email TEXT UNIQUE,
-    is_verified BOOLEAN DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
+-- =====================================================================
+-- ALTERIS OS — BioVault-Core
+-- Database User & Permissions Setup (AWS RDS PostgreSQL)
+-- =====================================================================
 
-CREATE TABLE doctor_details (
-    wallet_address TEXT PRIMARY KEY REFERENCES profiles(wallet_address) ON DELETE CASCADE,
-    specialization TEXT NOT NULL,
-    license_number TEXT UNIQUE,
-    hospital_name TEXT,
-    bio TEXT,
-    consultation_fee NUMERIC DEFAULT 0
-);
+-- ─────────────────────────────────────────────────────────────────────
+-- 1. APPLICATION USER (read/write — used by Go backend)
+-- ─────────────────────────────────────────────────────────────────────
+CREATE USER alteris_app WITH PASSWORD 'your_strong_password_here';
 
-CREATE TABLE patient_details (
-    wallet_address TEXT PRIMARY KEY REFERENCES profiles(wallet_address) ON DELETE CASCADE,
-    date_of_birth DATE,
-    blood_group TEXT,
-    emergency_contact TEXT,
-    allergies TEXT[] 
-);
+-- Grant connect and usage
+GRANT CONNECT ON DATABASE postgres TO alteris_app;
+GRANT USAGE   ON SCHEMA public      TO alteris_app;
 
-CREATE TABLE insurer_details (
-    wallet_address TEXT PRIMARY KEY REFERENCES profiles(wallet_address) ON DELETE CASCADE,
-    company_name TEXT NOT NULL,
-    registration_id TEXT UNIQUE NOT NULL,
-    contact_number TEXT,
-    headquarters_address TEXT,
-    supported_plans TEXT[], 
-    is_active BOOLEAN DEFAULT true
-);
+-- Grant table-level permissions
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO alteris_app;
+GRANT USAGE, SELECT                  ON ALL SEQUENCES IN SCHEMA public TO alteris_app;
 
-CREATE POLICY "Users can update their own profile" 
-ON profiles FOR UPDATE 
-USING (auth.uid()::text = wallet_address);
+-- Ensure future tables are also accessible
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO alteris_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT USAGE, SELECT                  ON SEQUENCES TO alteris_app;
+
+
+-- ─────────────────────────────────────────────────────────────────────
+-- 2. READ-ONLY ANALYTICS USER (for dashboards / audit tools)
+-- ─────────────────────────────────────────────────────────────────────
+CREATE USER alteris_readonly WITH PASSWORD 'your_readonly_password_here';
+
+GRANT CONNECT ON DATABASE postgres    TO alteris_readonly;
+GRANT USAGE   ON SCHEMA public        TO alteris_readonly;
+GRANT SELECT  ON ALL TABLES IN SCHEMA public TO alteris_readonly;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT ON TABLES TO alteris_readonly;
+
+
+-- ─────────────────────────────────────────────────────────────────────
+-- 3. REVOKE PUBLIC ACCESS (security hardening)
+-- ─────────────────────────────────────────────────────────────────────
+REVOKE ALL ON DATABASE postgres FROM PUBLIC;
+REVOKE ALL ON SCHEMA public     FROM PUBLIC;
+
+
+-- ─────────────────────────────────────────────────────────────────────
+-- 4. VERIFY PERMISSIONS
+-- ─────────────────────────────────────────────────────────────────────
+-- Check which tables a user can access:
+SELECT table_name, privilege_type
+FROM information_schema.role_table_grants
+WHERE grantee = 'alteris_app'
+ORDER BY table_name, privilege_type;
+
+-- List all database users:
+SELECT usename, usesuper, usecreatedb FROM pg_user ORDER BY usename;
