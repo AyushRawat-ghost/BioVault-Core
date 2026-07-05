@@ -11,15 +11,20 @@ async function main() {
   
   const patientRegistry = await hre.ethers.getContractAt("PatientRegistry", patientRegistryAddress);
   
-  // Call addPatient (Admin only)
-  const tx = await patientRegistry.addPatient(
-    patientAddress,
-    "Alice Vance",               // name
-    "ipfs://patient-profile-cid"  // ipfsProfile
-  );
-  
-  await tx.wait();
-  console.log(`✅ Registered patient ${patientAddress} successfully!`);
+  // Check if patient is already registered
+  const isPat = await patientRegistry.isPatient(patientAddress);
+  if (!isPat) {
+    console.log(`Registering patient ${patientAddress}...`);
+    const tx = await patientRegistry.addPatient(
+      patientAddress,
+      "Alice Vance",               // name
+      "ipfs://patient-profile-cid"  // ipfsProfile
+    );
+    await tx.wait();
+    console.log(`✅ Registered patient ${patientAddress} successfully!`);
+  } else {
+    console.log(`ℹ️ Patient ${patientAddress} is already registered.`);
+  }
 }
 
 main().catch((error) => {

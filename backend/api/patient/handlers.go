@@ -1,23 +1,32 @@
 package patient
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
+	"patient-data-system/backend/pkg/config"
 	"patient-data-system/backend/pkg/db"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
 )
 
 type PatientHandler struct {
-	DB *db.Database
+	Cfg *config.Config
+	DB  *db.Database
 }
 
-func NewPatientHandler(database *db.Database) *PatientHandler {
+func NewPatientHandler(cfg *config.Config, database *db.Database) *PatientHandler {
 	return &PatientHandler{
-		DB: database,
+		Cfg: cfg,
+		DB:  database,
 	}
 }
 
@@ -43,10 +52,10 @@ func (h *PatientHandler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	var name, dob, bloodGroup, allergies, emergencyContact string
+	var name, dob, bloodGroup, allergies, emergencyContact, avatarURL string
 
-	query := `SELECT name, dob, blood_group, allergies, emergency_contact FROM patient_profiles WHERE wallet_address = $1`
-	err := h.DB.Conn.QueryRow(query, walletAddress).Scan(&name, &dob, &bloodGroup, &allergies, &emergencyContact)
+	query := `SELECT name, dob, blood_group, allergies, emergency_contact, avatar_url FROM patient_profiles WHERE wallet_address = $1`
+	err := h.DB.Conn.QueryRow(query, walletAddress).Scan(&name, &dob, &bloodGroup, &allergies, &emergencyContact, &avatarURL)
 	
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -58,12 +67,22 @@ func (h *PatientHandler) GetProfile(c *gin.Context) {
 				"blood_group":       "",
 				"allergies":         "",
 				"emergency_contact": "",
+				"avatar_url":        "",
 				"is_profile_empty":  true,
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query profile: " + err.Error()})
 		return
+	}
+
+	if avatarURL != "" {
+		s3Key := getS3KeyFromURL(avatarURL)
+		if s3Key != "" {
+			if presigned, signErr := h.getPresignedDownloadURL(c.Request.Context(), s3Key); signErr == nil {
+				avatarURL = presigned
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -73,6 +92,39 @@ func (h *PatientHandler) GetProfile(c *gin.Context) {
 		"blood_group":       bloodGroup,
 		"allergies":         allergies,
 		"emergency_contact": emergencyContact,
+		"avatar_url":        avatarURL,
 		"is_profile_empty":  false,
 	})
+}
+
+func getS3KeyFromURL(rawURL string) string {
+	idx := strings.Index(rawURL, "Bio-Information/")
+	if idx != -1 {
+		return rawURL[idx:]
+	}
+	idx2 := strings.Index(rawURL, "Profile-photos/")
+	if idx2 != -1 {
+		return rawURL[idx2:]
+	}
+	return ""
+}
+
+func (h *PatientHandler) getPresignedDownloadURL(ctx context.Context, key string) (string, error) {
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	client := s3.NewFromConfig(awsCfg)
+	presignClient := s3.NewPresignClient(client)
+
+	req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: &h.Cfg.AWSS3BioBucket,
+		Key:    &key,
+	}, s3.WithPresignExpires(15*time.Minute))
+	if err != nil {
+		return "", err
+	}
+
+	return req.URL, nil
 }

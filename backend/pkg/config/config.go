@@ -13,6 +13,10 @@ type Config struct {
 	DoctorRegistry     string
 	DatabaseURL        string
 	DeployerPrivateKey string
+	MLServiceURL       string
+	AWSS3Bucket        string
+	AWSS3BioBucket     string
+	RegulatoryLedger   string
 }
 
 func LoadConfig() *Config {
@@ -26,6 +30,10 @@ func LoadConfig() *Config {
 		DoctorRegistry:     os.Getenv("DOCTOR_REGISTRY_ADDR"),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		DeployerPrivateKey: os.Getenv("DEPLOYER_PRIVATE_KEY"),
+		MLServiceURL:       getEnv("ML_SERVICE_URL", "http://localhost:8000"),
+		AWSS3Bucket:        os.Getenv("AWS_S3_BUCKET"),
+		AWSS3BioBucket:     os.Getenv("AWS_S3_BIO_BUCKET"),
+		RegulatoryLedger:   os.Getenv("REGULATORY_LEDGER_ADDR"),
 	}
 }
 

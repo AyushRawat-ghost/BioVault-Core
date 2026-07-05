@@ -1,0 +1,33 @@
+# Step 1: Start Local Blockchain Node (Terminal 1)
+cd blockchain
+npm install
+npx hardhat node
+
+# Step 2: Compile & Deploy Smart Contracts (Terminal 2)
+cd blockchain
+npx hardhat compile
+npx hardhat run scripts/deploy.js --network localhost
+
+# Step 3: Register Patient, Doctor & Admin Credentials On-Chain (Terminal 2)
+npx hardhat run scripts/register-patient.js --network localhost
+npx hardhat run scripts/register-doctor.js --network localhost
+
+# Step 4: Check Patient/Doctor Status (Optional - Terminal 2)
+npx hardhat run scripts/check-patient-status.js --network localhost
+
+# Step 5: Run Vitals Telemetry Simulator (Terminal 2)
+node scripts/simulate-vitals.js
+
+# Step 6: Start Go Backend API Server (Terminal 3)
+cd backend
+go mod tidy
+go run main.go
+
+# Step 7: Start ML Analytics Engine (Terminal 4)
+cd ml
+python main.py
+
+# Step 8: Launch Frontend Dashboard Client (Terminal 5)
+cd frontend
+npm install
+npm run dev

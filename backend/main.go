@@ -6,6 +6,8 @@ import (
 	"patient-data-system/backend/api/admin"
 	"patient-data-system/backend/api/auth"
 	"patient-data-system/backend/api/patient"
+	"patient-data-system/backend/api/records"
+	"patient-data-system/backend/api/vitals"
 	"patient-data-system/backend/pkg/config"
 	"patient-data-system/backend/pkg/db"
 	"patient-data-system/backend/pkg/ethclient"
@@ -69,12 +71,20 @@ func main() {
 	}
 
 	// Patient
-	patientHandler := patient.NewPatientHandler(database)
+	patientHandler := patient.NewPatientHandler(cfg, database)
 	patient.RegisterRoutes(apiGroup, patientHandler)
 
 	// Admin
 	adminHandler := admin.NewAdminHandler(cfg, database, eth)
 	admin.RegisterRoutes(apiGroup, adminHandler)
+
+	// Vitals (IoT Stream Ingestion)
+	vitalsHandler := vitals.NewVitalsHandler(cfg, database)
+	vitals.RegisterRoutes(apiGroup, vitalsHandler)
+
+	// Records (S3 Uploads & Blockchain indexing)
+	recordsHandler := records.NewRecordsHandler(cfg, database, eth)
+	records.RegisterRoutes(apiGroup, recordsHandler)
 
 	log.Printf("Aetheris Go Gateway online on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

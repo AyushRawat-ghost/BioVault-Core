@@ -74,12 +74,19 @@ async function main() {
   const billAddr = await billing.getAddress();
   console.log("✅ BillingContract:", billAddr);
 
+  const RegulatoryLedger = await hre.ethers.getContractFactory("RegulatoryLedger");
+  const regulatoryLedger = await RegulatoryLedger.deploy(drAddr); // Passing Doctor Registry
+  await regulatoryLedger.waitForDeployment();
+  const regLedgerAddr = await regulatoryLedger.getAddress();
+  console.log("✅ RegulatoryLedger:", regLedgerAddr);
+
   console.log("\n--- UPDATED BACKEND .env VALUES ---");
   console.log(`PATIENT_REGISTRY_ADDR=${ptAddr}`);
   console.log(`DOCTOR_REGISTRY_ADDR=${drAddr}`);
   console.log(`INSURANCE_ADDR=${insuranceAddr}`);
   console.log(`TELEMEDICINE_ADDR=${teleAddr}`);
   console.log(`EMERGENCY_PROTOCOL_ADDR=${emAddr}`);
+  console.log(`REGULATORY_LEDGER_ADDR=${regLedgerAddr}`);
 
   console.log("\n--- UPDATED FRONTEND .env VALUES ---");
   console.log(`NEXT_PUBLIC_TELEMEDICINE=${teleAddr}`);
