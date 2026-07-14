@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("dotenv").config({ path: "../backend/.env" }); // Load deployer key and RPC from backend env
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -11,8 +12,12 @@ module.exports = {
   networks: {
     hardhat: {
       accounts: {
-        count: 100 // Generates 100 accounts on startup!
+        count: 100
       }
+    },
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || "",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : []
     }
   }
 };
