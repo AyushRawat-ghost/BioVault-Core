@@ -32,7 +32,9 @@ interface MedicalRecord {
   date: string;
   document_type: string;
   download_url: string;
+  s3_key?: string;
 }
+
 
 interface DoctorInfo {
   address: string;
@@ -124,6 +126,11 @@ export default function PatientDashboard() {
   const [claimCID, setClaimCID] = useState<string>("");
   const [claimSuccess, setClaimSuccess] = useState<string>("");
   const [claimError, setClaimError] = useState<string>("");
+  const [docSource, setDocSource] = useState<"select" | "upload">("select");
+  const [selectedRecordId, setSelectedRecordId] = useState<string>("");
+  const [isUploadingDoc, setIsUploadingDoc] = useState<boolean>(false);
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>("");
+
 
   // Claim Editing Form Inputs
   const [editClaimId, setEditClaimId] = useState<string>("");
@@ -305,15 +312,65 @@ export default function PatientDashboard() {
     }
   };
 
+  const INSURER_MAP: Record<string, string> = {
+    "Alteris Care": "0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f",
+    "HDFC Ergo": "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720",
+    "Star Health": "0xBcd4042DE499D14e55001CcbB24a551F3b954096",
+    "Max Bupa": "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+    "ICICI Lombard": "0xFABB0ac9d68B0B445fB7357272Ff202C5651694a",
+  };
+
+  const handleUploadClaimDoc = async (file: File) => {
+    if (!file) return;
+    setIsUploadingDoc(true);
+    setClaimError("");
+    setUploadSuccessMsg("");
+    setClaimCID("");
+
+    try {
+      const formData = new FormData();
+      formData.append("patient_address", walletAddress);
+      formData.append("diagnosis", "Insurance Claim Supporting Document");
+      formData.append("document_type", "report");
+      formData.append("record", file);
+
+      const resp = await fetch(`${API_URL}/api/records/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        setClaimCID(data.s3_key);
+        setUploadSuccessMsg(`Document uploaded successfully! S3 Key: ${data.s3_key}`);
+        await refreshRecords(walletAddress); // Refresh to update patient's records list
+      } else {
+        const errData = await resp.json();
+        setClaimError(errData.error || "Failed to upload document.");
+      }
+    } catch (err) {
+      setClaimError("Server connection error during upload.");
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
   const handleSubmitClaim = async (e: React.FormEvent) => {
     e.preventDefault();
     setClaimSuccess("");
     setClaimError("");
 
-    if (!claimInsurer || !claimAmount) {
-      setClaimError("Insurer and Amount requested are required.");
+    if (!claimAmount) {
+      setClaimError("Claim amount requested is required.");
       return;
     }
+
+    if (!claimCID) {
+      setClaimError("Please select an existing document or upload a new PDF proof.");
+      return;
+    }
+
+    const resolvedInsurer = (insurance && INSURER_MAP[insurance.provider]) || "0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f";
 
     try {
       const resp = await fetch(`${API_URL}/api/patient/insurance/claim`, {
@@ -321,9 +378,9 @@ export default function PatientDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patient_address: walletAddress,
-          insurer_address: claimInsurer,
+          insurer_address: resolvedInsurer,
           amount_requested: parseFloat(claimAmount),
-          claim_cid: claimCID || "ipfs://placeholder-claim-data",
+          claim_cid: claimCID,
           claim_id: Math.floor(Math.random() * 1000) + 1
         })
       });
@@ -333,6 +390,8 @@ export default function PatientDashboard() {
         setClaimInsurer("");
         setClaimAmount("");
         setClaimCID("");
+        setSelectedRecordId("");
+        setUploadSuccessMsg("");
         await refreshInsurance(walletAddress);
       } else {
         const errData = await resp.json();
@@ -341,6 +400,7 @@ export default function PatientDashboard() {
     } catch (err) {
       setClaimError("Server connection error.");
     }
+
   };
 
   const handleSelectEditClaim = (claimIdStr: string) => {
@@ -1145,15 +1205,9 @@ export default function PatientDashboard() {
                 </h4>
 
                 <form onSubmit={handleSubmitClaim} className="space-y-5">
-                  <div>
-                    <label className="block text-xs uppercase font-extrabold text-white/60 font-orbitron mb-2">Carrier Wallet Address</label>
-                    <input
-                      type="text"
-                      value={claimInsurer}
-                      onChange={(e) => setClaimInsurer(e.target.value)}
-                      placeholder="0x..."
-                      className="w-full bg-black border border-white/20 p-3.5 text-sm rounded focus:outline-none focus:border-cyber-blue text-white"
-                    />
+                  <div className="p-3 bg-white/[0.02] border border-white/10 rounded flex justify-between items-center text-xs">
+                    <span className="uppercase text-white/40 font-orbitron">Resolved Insurer Address</span>
+                    <span className="font-mono text-cyber-blue">{INSURER_MAP[insurance.provider] || "0x-none-found"}</span>
                   </div>
 
                   <div>
@@ -1168,15 +1222,77 @@ export default function PatientDashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-xs uppercase font-extrabold text-white/60 font-orbitron mb-2">Supporting Document CID (IPFS)</label>
-                    <input
-                      type="text"
-                      value={claimCID}
-                      onChange={(e) => setClaimCID(e.target.value)}
-                      placeholder="ipfs://QmClaimProofDocs..."
-                      className="w-full bg-black border border-white/20 p-3.5 text-sm rounded focus:outline-none focus:border-cyber-blue text-white"
-                    />
+                    <label className="block text-xs uppercase font-extrabold text-white/60 font-orbitron mb-2">Supporting Document Proof</label>
+                    
+                    <div className="flex gap-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => { setDocSource("select"); setClaimCID(""); setUploadSuccessMsg(""); }}
+                        className={`flex-1 py-2 text-xs font-orbitron font-bold uppercase border rounded transition-all cursor-pointer ${docSource === "select" ? "bg-cyber-blue/15 border-cyber-blue text-cyber-blue" : "border-white/10 text-white/60 hover:text-white"}`}
+                      >
+                        Select Existing Record
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDocSource("upload"); setClaimCID(""); setUploadSuccessMsg(""); }}
+                        className={`flex-1 py-2 text-xs font-orbitron font-bold uppercase border rounded transition-all cursor-pointer ${docSource === "upload" ? "bg-cyber-blue/15 border-cyber-blue text-cyber-blue" : "border-white/10 text-white/60 hover:text-white"}`}
+                      >
+                        Upload New PDF
+                      </button>
+                    </div>
+
+                    {docSource === "select" ? (
+                      <div>
+                        <select
+                          value={selectedRecordId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedRecordId(val);
+                            if (val) {
+                              const rec = records.find(r => r.id.toString() === val);
+                              if (rec && rec.s3_key) {
+                                setClaimCID(rec.s3_key);
+                              } else {
+                                setClaimCID("");
+                              }
+                            } else {
+                              setClaimCID("");
+                            }
+                          }}
+                          className="w-full bg-black border border-white/20 p-3.5 text-sm rounded focus:outline-none focus:border-cyber-blue text-white"
+                        >
+                          <option value="">-- Select a Clinical Record --</option>
+                          {records.map(rec => (
+                            <option key={rec.id} value={rec.id}>
+                              [{rec.document_type.toUpperCase()}] {rec.diagnosis} (by {rec.doctor})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-white/40 mt-1.5 font-mono">Only documents linked to your medical profile can be selected</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleUploadClaimDoc(e.target.files[0]);
+                            }
+                          }}
+                          disabled={isUploadingDoc}
+                          className="w-full bg-black border border-white/20 p-3 text-xs rounded focus:outline-none focus:border-cyber-blue text-white cursor-pointer file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-white/10 file:text-white file:cursor-pointer hover:file:bg-white/20"
+                        />
+                        {isUploadingDoc && (
+                          <p className="text-xs text-cyber-blue font-mono animate-pulse">Uploading and indexing document to S3 vault...</p>
+                        )}
+                        {uploadSuccessMsg && (
+                          <p className="text-xs text-green-400 font-mono">✓ {uploadSuccessMsg}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
+
 
                   <button
                     type="submit"

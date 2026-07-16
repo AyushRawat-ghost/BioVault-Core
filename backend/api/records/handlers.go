@@ -233,6 +233,7 @@ func (h *RecordsHandler) GetRecordsList(c *gin.Context) {
 		DocType      string `json:"document_type"`
 		Date         string `json:"date"`
 		DownloadURL  string `json:"download_url"`
+		S3Key        string `json:"s3_key"`
 	}
 
 	ctx := c.Request.Context()
@@ -258,9 +259,11 @@ func (h *RecordsHandler) GetRecordsList(c *gin.Context) {
 				DocType:     docType,
 				Date:        createdAt.Format("2006-01-02"),
 				DownloadURL: downloadURL,
+				S3Key:       s3Key,
 			})
 		}
 	}
+
 
 	if recordsList == nil {
 		recordsList = []RecordResponse{}

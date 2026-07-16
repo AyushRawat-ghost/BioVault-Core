@@ -3631,7 +3631,8 @@ export default function ProviderDashboard() {
 
                 <div className="p-4 border border-amber-500/20 bg-amber-500/5 rounded-lg flex items-start gap-3">
                   <ShieldAlert className="text-amber-400 shrink-0 mt-0.5" size={16} />
-                  <p className="text-xs text-amber-300/80">This override request will enter the <strong>Approval Queue</strong> and requires <strong>2 co-signatures</strong> from other clinicians or an admin before it becomes fully active.</p>
+                  <p className="text-xs text-amber-300/80">This override request will enter the <strong>Approval Queue</strong> and requires <strong>{Math.ceil(doctorsList.length * 0.75)} co-signatures</strong> from other clinicians or an admin before it becomes fully active.</p>
+
                 </div>
 
                 <button type="submit"
@@ -3927,7 +3928,8 @@ export default function ProviderDashboard() {
                     <span className="text-[10px] text-white/40 font-mono border border-white/10 px-2 py-1 rounded">
                       {isAdmin ? "🔐 Admin Approver" : "👨‍⚕️ Clinician Review"}
                     </span>
-                    <span className="text-[10px] text-white/40 font-mono">Required: 2 co-signatures</span>
+                    <span className="text-[10px] text-white/40 font-mono">Required: {Math.ceil(doctorsList.length * 0.75)} co-signatures</span>
+
                   </div>
                 </div>
 
@@ -3955,6 +3957,7 @@ export default function ProviderDashboard() {
                           const hasVoted = ov.voted_doctors.toLowerCase().split(",").includes(walletAddress.toLowerCase());
                           const isCreator = ov.doctor_address.toLowerCase() === walletAddress.toLowerCase();
                           const canVote = !hasVoted && (isAdmin || !isCreator) && ov.status === "active";
+                          const threshold = Math.ceil(doctorsList.length * 0.75) || 1;
 
                           return (
                             <tr key={ov.id} className="hover:bg-white/[0.02]">
@@ -3972,13 +3975,14 @@ export default function ProviderDashboard() {
                               <td className="p-4 max-w-[200px] truncate" title={ov.reason}>{ov.reason}</td>
                               <td className="p-4">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-white">{ov.votes_count}/2</span>
+                                  <span className="font-bold text-white">{ov.votes_count}/{threshold}</span>
                                   <div className="w-16 bg-white/10 h-1.5 rounded-full overflow-hidden">
-                                    <div className={`h-full transition-all ${ov.votes_count >= 2 ? "bg-emerald-500" : "bg-cyber-blue"}`}
-                                      style={{ width: `${Math.min(ov.votes_count * 50, 100)}%` }} />
+                                    <div className={`h-full transition-all ${ov.votes_count >= threshold ? "bg-emerald-500" : "bg-cyber-blue"}`}
+                                      style={{ width: `${Math.min((ov.votes_count / threshold) * 100, 100)}%` }} />
                                   </div>
                                 </div>
                               </td>
+
                               <td className="p-4">
                                 {ov.status === "endorsed" ? (
                                   <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-bold">✓ Endorsed</span>

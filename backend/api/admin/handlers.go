@@ -1937,13 +1937,28 @@ func (h *AdminHandler) VoteOverride(c *gin.Context) {
 		}
 	}
 
+	// Query total number of active/registered doctors
+	var totalDocs int
+	err = h.DB.Conn.QueryRow("SELECT COUNT(*) FROM doctor_profiles WHERE status = 'active'").Scan(&totalDocs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count doctors: " + err.Error()})
+		return
+	}
+
+	// Calculate 75% ceiling threshold: (totalDocs * 3 + 3) / 4
+	requiredVotes := (totalDocs * 3 + 3) / 4
+	if requiredVotes < 1 {
+		requiredVotes = 1
+	}
+
 	// Add vote
 	newVotedDocs := votedDocs + "," + dAddr
 	newVotesCount := currentVotes + 1
 	newStatus := status
-	if newVotesCount >= 2 {
+	if newVotesCount >= requiredVotes {
 		newStatus = "endorsed"
 	}
+
 
 	updateQuery := `
 		UPDATE emergency_overrides

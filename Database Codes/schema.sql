@@ -219,7 +219,8 @@ CREATE TABLE IF NOT EXISTS insurance_claims (
 -- ─────────────────────────────────────────────────────────────────────
 -- 13. EMERGENCY OVERRIDES
 -- Clinical consensus protocol: doctors request cross-patient access.
--- Requires 2 co-signatures to activate.
+-- Requires 75% doctor co-signatures to activate.
+
 -- ─────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS emergency_overrides (
     id              SERIAL          PRIMARY KEY,

@@ -50,11 +50,12 @@ contract EmergencyProtocol is Ownable {
 
         uint256 totalDocs = doctorRegistry.getDoctorList().length;
         
-        // 2/3 math: votes * 3 >= total * 2
-        if (ticket.votesFor * 3 >= totalDocs * 2) {
+        // 75% math: votes * 4 >= totalDocs * 3
+        if (ticket.votesFor * 4 >= totalDocs * 3) {
             ticket.isResolved = true;
             emit EmergencyResolved(_ticketId, ticket.patient);
         }
+
     }
 
     function isEmergencyAccessApproved(address _patient) external view returns (bool) {
